@@ -285,6 +285,22 @@ def test_3bet_is_at_least_3x_the_open():
     assert d.amount >= D("4.5"), d.amount
 
 
+def test_opens_quality_hands_not_offsuit_junk():
+    # the group's style: suited / pairs / broadway / connectors -> raise; offsuit junk -> fold
+    for hc in ("9d5c", "Qd3c", "Jh6d", "Ts2d"):          # offsuit, non-broadway, non-connector
+        assert decide(preflop_state(2, hero_seat=0, hero_cards=hc, button=0), rng()).action \
+            == ActionType.FOLD, hc
+    for hc in ("6c8c", "AhKd", "2h2c", "Tc9d"):           # suited / broadway-o / pair / connector-o
+        assert decide(preflop_state(2, hero_seat=0, hero_cards=hc, button=0), rng()).action \
+            == ActionType.RAISE, hc
+
+
+def test_pair_plus_gutshot_does_not_semibluff_raise():
+    # 8c6c on 8-5-A-9: middle pair + GUTSHOT facing a turn bet -> call/fold, never a semi-bluff raise
+    gs = postflop_state(2, hero_seat=0, hero_cards="8c6c", board="8s5sAc9s", to_call="15", pot="15")
+    assert decide(gs, rng(), iterations=3000).action in (ActionType.CALL, ActionType.FOLD)
+
+
 def test_board_straight_is_not_value_bet():
     # 5-6-7-8-9 on the board; hero's Q is dead -> CHECK, don't "value bet" a likely chop
     gs = postflop_state(2, hero_seat=0, hero_cards="Qs5s", board="9s6h8c5h7s", to_call="0", pot="21")

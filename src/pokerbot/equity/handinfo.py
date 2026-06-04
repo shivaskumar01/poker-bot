@@ -39,13 +39,15 @@ def _flush_draw(cards, board_len: int) -> bool:
 
 
 def _straight_draw(cards, board_len: int) -> bool:
+    """Open-ended straight draw only (four in a row, completable on BOTH ends). Gutshots and
+    one-enders (4 outs) are too weak to treat as a draw for (semi-)bluffing."""
     if board_len >= 5:
         return False
     vals = {c.value for c in cards}
     if 14 in vals:
         vals.add(1)  # wheel ace
-    for low in range(1, 11):                       # any 5-card window we hold 4 of
-        if len(set(range(low, low + 5)) & vals) == 4:
+    for low in range(2, 11):                        # runs 2-5 .. 10-13: both ends make a straight
+        if set(range(low, low + 4)) <= vals:
             return True
     return False
 

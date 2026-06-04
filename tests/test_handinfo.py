@@ -32,6 +32,12 @@ def test_flush_draw_is_a_draw():
     assert i.draw and not i.made
 
 
+def test_open_ender_is_a_draw_but_gutshot_is_not():
+    assert hb("7h6c", "8s9c2d").draw          # 6-7-8-9 open-ender
+    assert not hb("8c6c", "8s5s9s").draw      # 5-6-_-8-9 gutshot (+ pair) -> not a draw to raise
+    assert not hb("Td6c", "7s8s2d").draw      # 6-7-8-_-T gutshot
+
+
 def test_no_draws_on_the_river():
     i = hb("9c4d", "KsQh2d7s8c")  # river, ace-high junk
     assert not i.draw and not i.made

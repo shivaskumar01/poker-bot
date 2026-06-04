@@ -17,7 +17,7 @@ from ..opponents.classify import classify
 from . import exploit, ranges, sizing
 from .decision import Decision
 from .mixer import Mixer
-from .notation import canonical, is_suited
+from .notation import canonical, gap, is_pair, is_suited
 
 PUSH_FOLD_BB = 12.0
 LATE_POSITIONS = {"CO", "BTN", "SB", "HJ"}
@@ -111,6 +111,15 @@ def _threebet_mult(read, in_position: bool) -> Decimal:
     return Decimal(str(base))
 
 
+def _openable(cls: str) -> bool:
+    """The group's opening style: pairs, ANY suited hand, broadway offsuit, and offsuit
+    connectors/one-gappers — but never random offsuit junk (95o, Q3o, J6o, A8o...)."""
+    if is_pair(cls) or is_suited(cls):
+        return True
+    broadway = cls[0] in "AKQJT" and cls[1] in "AKQJT"   # both cards ten-or-higher
+    return broadway or gap(cls) <= 1                       # offsuit broadway or (one-)connector
+
+
 def _is_3bet_bluff(cls: str) -> bool:
     # polar bluffs: suited hands (playable) or ace/king-high (card-removal blockers)
     return is_suited(cls) or cls[0] in ("A", "K")
@@ -143,7 +152,7 @@ def decide_preflop(gs: GameState, rng: random.Random | None = None, read=None) -
 def _open_or_fold(gs, ctx, cls, pct, raise_ok, mx, read):
     frac = ranges.rfi_fraction(ctx.players_left, is_sb=ctx.is_sb,
                                heads_up_match=ctx.heads_up_match, blind_vs_blind=ctx.blind_vs_blind)
-    if pct <= frac:
+    if pct <= frac and _openable(cls):
         if raise_ok:
             return Decision(ActionType.RAISE, _open_to(gs, mx, read),
                             f"open {cls} ({ctx.hero_pos}, top {frac:.0%})")
@@ -156,7 +165,7 @@ def _open_or_fold(gs, ctx, cls, pct, raise_ok, mx, read):
 def _iso_or_fold(gs, ctx, cls, pct, raise_ok, mx, read):
     frac = ranges.iso_fraction(ctx.players_left, ctx.num_limpers, is_sb=ctx.is_sb,
                                heads_up_match=ctx.heads_up_match, blind_vs_blind=ctx.blind_vs_blind)
-    if pct <= frac and raise_ok:
+    if pct <= frac and raise_ok and _openable(cls):
         return Decision(ActionType.RAISE, _open_to(gs, mx, read, ctx.num_limpers),
                         f"isolate {cls} over {ctx.num_limpers} limper(s)")
     if gs.to_call <= 0:
