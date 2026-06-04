@@ -24,6 +24,13 @@ python3 -m venv .venv
 
 ## Workflow
 
+**Easiest — the control panel** (set table/mode, Start/Stop, watch the live hand + decision,
+see opponent profiles, re-learn from logs, all in one page):
+```bash
+PYTHONPATH=src ./.venv/bin/python tools/app.py      # opens http://127.0.0.1:8765
+```
+Or use the individual command-line tools:
+
 **1. Learn your group** (build opponent profiles from PokerNow log exports):
 ```bash
 PYTHONPATH=src ./.venv/bin/python tools/analyze_logs.py    # reads ~/Desktop/Poker learning logs
