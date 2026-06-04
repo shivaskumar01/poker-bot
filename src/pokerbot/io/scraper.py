@@ -7,6 +7,7 @@ Money/cards parsing handles both glyph (♠) and ascii (s) suits and comma/K/M f
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -28,18 +29,18 @@ _STATUS_MAP = {
 _STREET_BY_BOARD = {0: Street.PREFLOP, 3: Street.FLOP, 4: Street.TURN, 5: Street.RIVER}
 
 
+_MONEY_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*([KkMm])?")
+
+
 def parse_money(s: str) -> Decimal:
-    s = s.strip().replace(",", "").replace("$", "").replace("€", "").replace("£", "")
-    if not s:
+    r"""First numeric amount from messy text ('0\n\ntotal 0', '1,234.50', '1.2K', '$25')."""
+    m = _MONEY_RE.search(s.replace("$", "").replace("€", "").replace("£", ""))
+    if not m:
         return Decimal("0")
-    mult = 1
-    if s[-1] in "KkMm":
-        mult = {"k": 1000, "m": 1_000_000}[s[-1].lower()]
-        s = s[:-1]
-    try:
-        return Decimal(s) * mult
-    except Exception:
-        return Decimal("0")
+    value = Decimal(m.group(1).replace(",", ""))
+    if m.group(2):
+        value *= {"k": 1000, "m": 1_000_000}[m.group(2).lower()]
+    return value
 
 
 def parse_card_text(s: str) -> Card:
@@ -128,20 +129,31 @@ class Scraper:
 
     def read_observation(self) -> RawObservation:
         seats: list[RawSeat] = []
-        for i, el in enumerate(self.page.query_selector_all(self.sel.seat)):
+        for el in self.page.query_selector_all(self.sel.seat):
+            classes = el.get_attribute("class") or ""
             name_el = el.query_selector(self.sel.seat_name)
+            name = name_el.inner_text().strip() if name_el else None
+            if not name:
+                continue  # unoccupied / waiting seat with no player
+            seat_match = re.search(r"table-player-(\d+)", classes)
             stack_el = el.query_selector(self.sel.seat_stack)
             bet_el = el.query_selector(self.sel.seat_bet)
-            classes = (el.get_attribute("class") or "")
-            cards = [c.inner_text() for c in el.query_selector_all(".card") if c.inner_text().strip()]
+            cards = [c.inner_text() for c in el.query_selector_all(self.sel.seat_card)
+                     if c.inner_text().strip()]
+            if "fold" in classes:
+                status = "folded"
+            elif "waiting" in classes or "away" in classes:
+                status = "away"
+            else:
+                status = "active"
             seats.append(RawSeat(
-                seat_id=i,
-                name=name_el.inner_text().strip() if name_el else None,
+                seat_id=int(seat_match.group(1)) if seat_match else len(seats),
+                name=name,
                 stack=stack_el.inner_text() if stack_el else "0",
                 bet=bet_el.inner_text() if bet_el else "",
-                status="folded" if "fold" in classes else ("away" if "away" in classes else "active"),
-                is_button=bool(el.query_selector(self.sel.dealer_button)) or "dealer" in classes,
-                is_hero="you-player" in classes,
+                status=status,
+                is_button=bool(el.query_selector(self.sel.dealer_button)),
+                is_hero=(self.hero_name is not None and name == self.hero_name),
                 cards=cards,
             ))
         board = [c.inner_text() for c in self.page.query_selector_all(self.sel.board_card)]

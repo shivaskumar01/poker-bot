@@ -1,0 +1,149 @@
+{
+  "buttons": [
+    {
+      "text": "OPTIONS",
+      "cls": "top-buttons-button options "
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SIT",
+      "cls": "table-player-seat-button"
+    },
+    {
+      "text": "SOUND",
+      "cls": "button-1 dark-gray small-button action-button sound-control-button sound-med"
+    },
+    {
+      "text": "LOG / LEDGER",
+      "cls": "button-1 show-log-button small-button dark-gray"
+    },
+    {
+      "text": "Expand/Collapse",
+      "cls": "chat-expand-button "
+    },
+    {
+      "text": "NEW MESSAGE",
+      "cls": "chat-new-message-button with-tip"
+    },
+    {
+      "text": "0 muted",
+      "cls": "blocked-chat-button"
+    },
+    {
+      "text": "JOIN",
+      "cls": "conf-control join"
+    },
+    {
+      "text": "Got it!",
+      "cls": "decision-button green"
+    }
+  ],
+  "cards": [],
+  "players": [
+    {
+      "cls": "table-player table-player-1",
+      "text": "WAITING\n\nshivas\n\n50.00"
+    },
+    {
+      "cls": "player-table-signals-container top",
+      "text": ""
+    },
+    {
+      "cls": "table-player-cards hide-cards ",
+      "text": ""
+    },
+    {
+      "cls": "table-player-status-icon waiting",
+      "text": "WAITING"
+    },
+    {
+      "cls": "player-table-signals-container bottom",
+      "text": ""
+    },
+    {
+      "cls": "table-player-infos-ctn",
+      "text": "shivas\n\n50.00"
+    },
+    {
+      "cls": "table-player-name ",
+      "text": "shivas"
+    },
+    {
+      "cls": "table-player-stack",
+      "text": "50.00"
+    },
+    {
+      "cls": "table-player table-player-seat table-player-2",
+      "text": "2\n\nSIT"
+    },
+    {
+      "cls": "table-player-seat-position-number",
+      "text": "2"
+    },
+    {
+      "cls": "table-player-seat-button",
+      "text": "SIT"
+    },
+    {
+      "cls": "table-player table-player-seat table-player-3",
+      "text": "3\n\nSIT"
+    },
+    {
+      "cls": "table-player-seat-position-number",
+      "text": "3"
+    },
+    {
+      "cls": "table-player-seat-button",
+      "text": "SIT"
+    }
+  ],
+  "pots": [
+    {
+      "cls": "bomb-pot-banner hidden",
+      "text": ""
+    },
+    {
+      "cls": "bomb-pot-banner hidden",
+      "text": ""
+    },
+    {
+      "cls": "top-pot-warning ",
+      "text": ""
+    },
+    {
+      "cls": "table-pot-size",
+      "text": "0\n\ntotal 0"
+    }
+  ]
+}

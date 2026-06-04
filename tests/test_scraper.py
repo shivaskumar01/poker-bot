@@ -21,6 +21,7 @@ def test_parse_money():
     assert parse_money("1,234.50") == D("1234.50")
     assert parse_money("1.2K") == D("1200.0")
     assert parse_money("$25") == D("25")
+    assert parse_money("0\n\ntotal 0") == D("0")     # PokerNow pot element text
     assert parse_money("") == D("0")
 
 

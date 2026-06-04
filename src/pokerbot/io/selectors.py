@@ -12,17 +12,18 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Selectors:
+    # Confirmed on pokernow.com via selector_probe (empty seats add `.table-player-seat`;
+    # there is no `.you-player`, so the hero is identified by name).
     # --- seats / players ---
-    seat: str = ".table-player"                  # each seated player container
+    seat: str = ".table-player:not(.table-player-seat)"  # occupied seats only
     seat_name: str = ".table-player-name"
     seat_stack: str = ".table-player-stack"
-    seat_bet: str = ".table-player-bet-value"
-    hero_seat: str = ".you-player"               # hero's own seat carries this class
-    dealer_button: str = ".dealer-button-ctn"    # the dealer button marker
+    seat_bet: str = ".table-player-bet-value"    # TODO: confirm during a live hand
+    seat_card: str = ".table-player-cards .card"  # hero's hole cards live here
+    dealer_button: str = ".dealer-button-ctn"    # TODO: confirm during a live hand
 
     # --- cards ---
-    board_card: str = ".table-cards .card"
-    hero_card: str = ".you-player .card"
+    board_card: str = ".table-cards .card"        # TODO: confirm during a live hand
 
     # --- pot / amounts ---
     pot: str = ".table-pot-size"
