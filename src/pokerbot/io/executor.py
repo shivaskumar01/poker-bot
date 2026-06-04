@@ -48,18 +48,21 @@ class Executor:
         return False
 
     def _set_amount(self, amount: Decimal) -> None:
-        # PokerNow's raise entry is a custom widget (.entry-raise .entry-ctn) rather than a
-        # plain <input>; exact-amount entry is calibrated in execute-mode bring-up.
-        el = self.page.query_selector(self.sel.raise_entry)
-        if el is None:
-            return
+        # PokerNow's raise entry is a custom widget; try a real <input> first, else click & type.
         value = str(int(amount)) if amount == amount.to_integral_value() else str(amount)
-        inp = el.query_selector("input")
-        try:
-            if inp:
-                inp.fill(value)
-            else:
+        for sel in (f"{self.sel.raise_entry} input", "input.value", ".raise-bet-value input"):
+            el = self.page.query_selector(sel)
+            if el:
+                try:
+                    el.fill("")
+                    el.fill(value)
+                    return
+                except Exception:  # noqa: BLE001 - fall through to the click-and-type path
+                    pass
+        el = self.page.query_selector(self.sel.raise_entry)
+        if el:
+            try:
                 el.click()
                 self.page.keyboard.type(value)
-        except Exception:
-            pass
+            except Exception:  # noqa: BLE001 - execute-mode raise sizing may need a live re-probe
+                pass

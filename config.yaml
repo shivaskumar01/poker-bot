@@ -2,6 +2,8 @@
 # Execution (clicking actions) is REFUSED unless players_consent is true.
 mode: observe              # observe | execute  (observe = read + decide + log, never click)
 players_consent: false     # MUST be true to allow execute mode (consenting home game)
+hero_name:                 # blank = auto-detect your seat (.you-player); or set your display name
+kill_file: STOP            # safe stop: create a file with this name (touch STOP) to halt the bot
 
 table:
   url: ""                  # full PokerNow table URL
@@ -19,7 +21,7 @@ limits:
   max_hands: 500           # hard cap on hands per session
 
 engine:
-  mc_iterations: 20000     # baseline Monte-Carlo equity rollouts per decision
+  mc_iterations: 1500      # Monte-Carlo equity rollouts per decision (live = snappy + accurate)
   mc_iterations_big_pot: 60000
 
 timing:                    # server-courtesy / realistic pacing for a DISCLOSED bot (not stealth)
