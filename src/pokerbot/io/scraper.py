@@ -1,9 +1,8 @@
 """Scrape PokerNow's DOM into a GameState.
 
-Split into a **pure assembly core** (raw observation -> GameState, fully unit-tested) and a
-thin **DOM-reading layer** (Playwright queries via Selectors, calibrated live). The DOM layer
-fills a RawObservation; `to_game_state` turns it into the canonical model the engine consumes.
-Money/cards parsing handles both glyph (♠) and ascii (s) suits and comma/K/M formatting.
+Pure assembly core (`to_game_state`, fully unit-tested) + a thin Playwright reading layer
+(`Scraper`, calibrated live). Cards are decoded from `.card-container` classes; to-call is
+read from the action buttons; the dealer seat from `.dealer-position-N`.
 """
 from __future__ import annotations
 
@@ -12,24 +11,17 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from ..model.cards import Card
-from ..model.state import (
-    GameState,
-    Seat,
-    SeatStatus,
-    Street,
-    TableConfig,
-)
+from ..model.state import GameState, Seat, SeatStatus, Street, TableConfig
 
-_SUIT_GLYPH = {"♠": "s", "♥": "h", "♦": "d", "♣": "c"}
 _STATUS_MAP = {
     "active": SeatStatus.ACTIVE, "folded": SeatStatus.FOLDED, "all_in": SeatStatus.ALL_IN,
     "allin": SeatStatus.ALL_IN, "sitting_out": SeatStatus.SITTING_OUT,
     "away": SeatStatus.AWAY, "empty": SeatStatus.EMPTY,
 }
 _STREET_BY_BOARD = {0: Street.PREFLOP, 3: Street.FLOP, 4: Street.TURN, 5: Street.RIVER}
-
-
 _MONEY_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*([KkMm])?")
+_SUIT_CLASS = re.compile(r"card-([shdc])(?![\w-])")          # card-s / card-h / ... (not card-s-7)
+_RANK_CLASS = re.compile(r"card-s-(10|[2-9TJQKA])", re.I)    # card-s-7, card-s-K, card-s-10
 
 
 def parse_money(s: str) -> Decimal:
@@ -44,14 +36,25 @@ def parse_money(s: str) -> Decimal:
 
 
 def parse_card_text(s: str) -> Card:
-    s = s.strip()
-    if s[-1] in _SUIT_GLYPH:
-        suit, rank = _SUIT_GLYPH[s[-1]], s[:-1]
-    else:
-        suit, rank = s[-1].lower(), s[:-1]
+    s = s.strip().replace("\n", "").replace(" ", "")
+    glyph = {"♠": "s", "♥": "h", "♦": "d", "♣": "c"}
+    suit = glyph.get(s[-1], s[-1].lower())
+    rank = s[:-1]
     if rank == "10":
         rank = "T"
     return Card(rank.upper(), suit)
+
+
+def card_from_classes(class_str: str) -> Card | None:
+    """Decode a `.card-container` class string, e.g. 'card-container card-d card-s-6 flipped'."""
+    sm = _SUIT_CLASS.search(class_str)
+    rm = _RANK_CLASS.search(class_str)
+    if not (sm and rm):
+        return None
+    rank = rm.group(1).upper()
+    if rank == "10":
+        rank = "T"
+    return Card(rank, sm.group(1))
 
 
 @dataclass
@@ -71,6 +74,8 @@ class RawObservation:
     seats: list[RawSeat]
     board: list[str] = field(default_factory=list)
     pot: str = "0"
+    to_call: str | None = None          # if set (e.g. read from buttons), used verbatim
+    button_seat_id: int | None = None   # if set (from .dealer-position-N), used verbatim
 
 
 def to_game_state(raw: RawObservation, small_blind: Decimal, big_blind: Decimal,
@@ -91,12 +96,17 @@ def to_game_state(raw: RawObservation, small_blind: Decimal, big_blind: Decimal,
     hero = next((s for s in seats if s.is_hero), None)
     if hero is None:
         raise ValueError("hero seat not found in observation (set is_hero or hero_name)")
-    button = next((s.seat_id for s in seats if s.is_button), hero.seat_id)
+    if raw.button_seat_id is not None:
+        button = raw.button_seat_id
+    else:
+        button = next((s.seat_id for s in seats if s.is_button), hero.seat_id)
     board = [parse_card_text(c) for c in raw.board]
     in_hand = [s for s in seats if s.status in (SeatStatus.ACTIVE, SeatStatus.ALL_IN)]
-    max_committed = max((s.committed for s in in_hand), default=Decimal("0"))
-    to_call = max(Decimal("0"), max_committed - hero.committed)
-    # PokerNow's pot element shows the collected pot; add uncalled current-street bets.
+    if raw.to_call is not None:
+        to_call = parse_money(raw.to_call)
+    else:
+        max_committed = max((s.committed for s in in_hand), default=Decimal("0"))
+        to_call = max(Decimal("0"), max_committed - hero.committed)
     pot = parse_money(raw.pot) + sum((s.committed for s in in_hand), Decimal("0"))
 
     return GameState(
@@ -109,11 +119,7 @@ def to_game_state(raw: RawObservation, small_blind: Decimal, big_blind: Decimal,
 
 
 class Scraper:
-    """DOM-reading layer (calibrate selectors via tools/selector_probe.py).
-
-    These methods read the live page; they are not unit-tested (they need a real table),
-    but they only feed the tested `to_game_state` core above.
-    """
+    """DOM-reading layer (calibrated selectors). Feeds the tested `to_game_state` core."""
 
     def __init__(self, page, selectors, hero_name: str | None = None) -> None:
         self.page = page
@@ -121,11 +127,14 @@ class Scraper:
         self.hero_name = hero_name
 
     def is_hero_turn(self) -> bool:
-        """True when our action buttons are present/enabled."""
-        area = self.page.query_selector(self.sel.action_area)
-        if not area:
-            return False
-        return any(b.is_enabled() for b in area.query_selector_all("button"))
+        return any(self.page.query_selector(s) for s in
+                   (self.sel.btn_fold, self.sel.btn_check, self.sel.btn_call, self.sel.btn_raise))
+
+    def _to_call_text(self) -> str:
+        if self.page.query_selector(self.sel.btn_check):
+            return "0"                       # checking is free -> nothing to call
+        call_btn = self.page.query_selector(self.sel.btn_call)
+        return call_btn.inner_text() if call_btn else "0"
 
     def read_observation(self) -> RawObservation:
         seats: list[RawSeat] = []
@@ -134,13 +143,18 @@ class Scraper:
             name_el = el.query_selector(self.sel.seat_name)
             name = name_el.inner_text().strip() if name_el else None
             if not name:
-                continue  # unoccupied / waiting seat with no player
+                continue
             seat_match = re.search(r"table-player-(\d+)", classes)
             stack_el = el.query_selector(self.sel.seat_stack)
-            bet_el = el.query_selector(self.sel.seat_bet)
-            cards = [c.inner_text() for c in el.query_selector_all(self.sel.seat_card)
-                     if c.inner_text().strip()]
-            if "fold" in classes:
+            is_hero = self.sel.hero_seat_class in classes or (
+                self.hero_name is not None and name == self.hero_name)
+            cards = []
+            if is_hero:
+                for cc in el.query_selector_all(".card-container.flipped"):
+                    c = card_from_classes(cc.get_attribute("class") or "")
+                    if c:
+                        cards.append(str(c))
+            if self.sel.folded_class in classes:
                 status = "folded"
             elif "waiting" in classes or "away" in classes:
                 status = "away"
@@ -148,15 +162,25 @@ class Scraper:
                 status = "active"
             seats.append(RawSeat(
                 seat_id=int(seat_match.group(1)) if seat_match else len(seats),
-                name=name,
-                stack=stack_el.inner_text() if stack_el else "0",
-                bet=bet_el.inner_text() if bet_el else "",
-                status=status,
-                is_button=bool(el.query_selector(self.sel.dealer_button)),
-                is_hero=(self.hero_name is not None and name == self.hero_name),
-                cards=cards,
+                name=name, stack=stack_el.inner_text() if stack_el else "0",
+                status=status, is_hero=is_hero, cards=cards,
             ))
-        board = [c.inner_text() for c in self.page.query_selector_all(self.sel.board_card)]
+
+        button_seat = None
+        btn = self.page.query_selector(self.sel.dealer_button)
+        if btn:
+            dm = re.search(r"dealer-position-(\d+)", btn.get_attribute("class") or "")
+            if dm:
+                button_seat = int(dm.group(1))
+
+        board = []
+        for cc in self.page.query_selector_all(self.sel.board_card):
+            c = card_from_classes(cc.get_attribute("class") or "")
+            if c:
+                board.append(str(c))
+
         pot_el = self.page.query_selector(self.sel.pot)
-        return RawObservation(seats=seats, board=[b for b in board if b.strip()],
-                              pot=pot_el.inner_text() if pot_el else "0")
+        return RawObservation(
+            seats=seats, board=board, pot=pot_el.inner_text() if pot_el else "0",
+            to_call=self._to_call_text(), button_seat_id=button_seat,
+        )

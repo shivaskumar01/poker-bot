@@ -1,44 +1,42 @@
-"""Single source of truth for PokerNow DOM selectors.
+"""PokerNow.com DOM selectors — calibrated from a live hand via selector_probe.
 
-PokerNow's markup uses class names that can change, so these are **best-effort defaults**
-to be confirmed/corrected by running `tools/selector_probe.py` against a live table. A DOM
-change is then a one-file fix here. Action buttons are matched by visible text (robust to
-class churn); structural elements use CSS.
+Cards are `.card-container` elements whose classes encode them: `card-<suit>` (s/h/d/c) and
+`card-s-<rank>`, with `.flipped` meaning face-up. The hero's seat carries `.you-player`
+(and `.decision-current` on its turn). Action buttons are identified by class, not text.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class Selectors:
-    # Confirmed on pokernow.com via selector_probe (empty seats add `.table-player-seat`;
-    # there is no `.you-player`, so the hero is identified by name).
-    # --- seats / players ---
-    seat: str = ".table-player:not(.table-player-seat)"  # occupied seats only
+    # --- seats / players (empty seats add .table-player-seat; hero seat adds .you-player) ---
+    seat: str = ".table-player:not(.table-player-seat)"
     seat_name: str = ".table-player-name"
     seat_stack: str = ".table-player-stack"
-    seat_bet: str = ".table-player-bet-value"    # TODO: confirm during a live hand
-    seat_card: str = ".table-player-cards .card"  # hero's hole cards live here
-    dealer_button: str = ".dealer-button-ctn"    # TODO: confirm during a live hand
+    hero_seat_class: str = "you-player"          # substring test on a seat's class
+    current_actor_class: str = "decision-current"
+    folded_class: str = "fold"                    # appears in a folded seat's class
 
-    # --- cards ---
-    board_card: str = ".table-cards .card"        # TODO: confirm during a live hand
+    # --- cards (.card-container with card-<suit> + card-s-<rank>; .flipped = face up) ---
+    hero_card: str = ".you-player .card-container.flipped"
+    board_card: str = ".table-cards .card-container.flipped"
 
-    # --- pot / amounts ---
+    # --- dealer button (container class carries dealer-position-<seat#>) ---
+    dealer_button: str = ".dealer-button-ctn"
+
+    # --- pot ---
     pot: str = ".table-pot-size"
 
-    # --- action controls ---
+    # --- action controls (by class; text is unreliable) ---
     action_area: str = ".game-decisions-ctn"
-    raise_input: str = ".raise-bet-value input, input.value"
-    # buttons matched by lowercased visible text (substring):
-    button_texts: dict = field(default_factory=lambda: {
-        "fold": ["fold"],
-        "check_call": ["check", "call"],
-        "bet_raise": ["bet", "raise"],
-        "allin": ["all in", "all-in", "allin"],
-        "confirm": ["confirm", "ok", "bet", "raise"],
-    })
+    btn_fold: str = ".game-decisions-ctn button.fold"
+    btn_check: str = ".game-decisions-ctn button.check"
+    btn_call: str = ".game-decisions-ctn button.call"
+    btn_raise: str = ".game-decisions-ctn button.raise"
+    raise_entry: str = ".entry-raise .entry-ctn"   # custom widget; execute-mode TODO
 
-    # --- running game log (reuse io.log_parser on this text) ---
-    log_entry: str = ".log-3 .message, .game-log .message"
+    # --- running log (opened via the LOG/LEDGER button) — entry selector still TBD ---
+    show_log_button: str = ".show-log-button"
+    log_entry: str = ".log-3 .message"

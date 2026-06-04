@@ -4,6 +4,7 @@ from pokerbot.io.executor import Executor
 from pokerbot.io.scraper import (
     RawObservation,
     RawSeat,
+    card_from_classes,
     parse_card_text,
     parse_money,
     to_game_state,
@@ -60,6 +61,36 @@ def test_to_game_state_postflop_street_from_board():
     gs = to_game_state(raw, D("1"), D("2"))
     assert gs.street == Street.FLOP
     assert gs.board == (Card("A", "s"), Card("K", "d"), Card("2", "c"))
+
+
+def test_card_from_classes():
+    assert card_from_classes("card-container card-d  card-s-6 flipped card-p1 med") == Card("6", "d")
+    assert card_from_classes("card-container card-s  card-s-7 flipped big") == Card("7", "s")
+    assert card_from_classes("card-container card-c  card-s-K flipped big") == Card("K", "c")
+    assert card_from_classes("card-container card-h  card-s-10 flipped") == Card("T", "h")
+    assert card_from_classes("table-cards run-1") is None        # not a card container
+
+
+def test_to_game_state_real_heads_up_hand():
+    # the exact hand captured by the live probe: hero "robot" 6d4h vs vik, flop 7s2dKc
+    raw = RawObservation(
+        seats=[
+            RawSeat(1, "robot", "48.00", is_hero=True, cards=["6d", "4h"]),
+            RawSeat(7, "vik", "48.00"),
+        ],
+        board=["7s", "2d", "Kc"],
+        pot="4.00\n\ntotal 4.00",
+        to_call="0",                 # check button present -> nothing to call
+        button_seat_id=7,            # from .dealer-position-7
+    )
+    gs = to_game_state(raw, D("0.5"), D("1"))
+    assert gs.street == Street.FLOP
+    assert gs.button_seat_id == 7 and gs.hero_seat_id == 1
+    assert gs.to_call == D("0") and gs.pot == D("4.00")
+    assert gs.num_live_opponents == 1
+    assert gs.hero_position == "BB"      # HU: button=vik(7), hero(1)=BB
+    assert gs.hero.cards == (Card("6", "d"), Card("4", "h"))
+    assert gs.board == (Card("7", "s"), Card("2", "d"), Card("K", "c"))
 
 
 def test_executor_consent_gate():
