@@ -20,6 +20,7 @@ import random
 import re
 import time
 
+from .domdump import dump_dom, scopes
 from .email_inbox import TempInbox
 
 _SUBMIT_RE = re.compile(r"authenticate|continue|submit|confirm|verify|proceed|log\s?in|sign\s?in|"
@@ -29,8 +30,6 @@ _CODE_SCREEN = re.compile(r"confirm the code|code (that )?was sent|verification 
 _EMAIL_SCREEN = re.compile(r"authenticate your email|enter your email|verify your email|"
                            r"e-?mail address|to proceed with your login", re.I)
 _SKIP_TYPES = {"hidden", "checkbox", "radio", "button", "submit", "reset", "range", "file", "image"}
-_DUMP_ATTRS = ("type", "name", "id", "placeholder", "maxlength", "inputmode", "autocomplete",
-               "aria-label", "class")
 
 
 def _type_of(el) -> str:
@@ -142,16 +141,9 @@ class EmailLogin:
         return True
 
     # --- frame-aware DOM access (handles the modal living in an iframe) ------
-    def _scopes(self, page):
-        try:
-            frames = getattr(page, "frames", None)
-            return list(frames) if frames else [page]
-        except Exception:  # noqa: BLE001
-            return [page]
-
     def _all_visible(self, page, selector):
         out = []
-        for fr in self._scopes(page):
+        for fr in scopes(page):
             try:
                 out += [el for el in (fr.query_selector_all(selector) or []) if el.is_visible()]
             except Exception:  # noqa: BLE001
@@ -160,7 +152,7 @@ class EmailLogin:
 
     def _text(self, page) -> str:
         parts = []
-        for fr in self._scopes(page):
+        for fr in scopes(page):
             try:
                 parts.append(fr.inner_text("body") or "")
             except Exception:  # noqa: BLE001
@@ -206,7 +198,7 @@ class EmailLogin:
             pass
 
     def _submit(self, page) -> bool:
-        for fr in self._scopes(page):
+        for fr in scopes(page):
             try:
                 for el in (fr.query_selector_all("button, a, [role='button'], .button, .alert-btn") or []):
                     if el.is_visible() and _SUBMIT_RE.search((el.inner_text() or "").strip()):
@@ -216,32 +208,5 @@ class EmailLogin:
                 pass
         return False
 
-    # --- diagnostics: print the real DOM of the gate so selectors can be calibrated ---
     def _dump(self, page, tag: str) -> None:
-        try:
-            out = [f"\n===== EMAIL-GATE DOM [{tag}] {time.strftime('%H:%M:%S')} ====="]
-            for i, fr in enumerate(self._scopes(page)):
-                url = getattr(fr, "url", "?")
-                url = url() if callable(url) else url
-                try:
-                    txt = (fr.inner_text("body") or "").strip().replace("\n", " ")[:300]
-                except Exception:  # noqa: BLE001
-                    txt = "(no text)"
-                out.append(f"[frame {i}] {url}\n  text: {txt}")
-                try:
-                    for el in (fr.query_selector_all("input, textarea") or []):
-                        attrs = {a: el.get_attribute(a) for a in _DUMP_ATTRS}
-                        out.append(f"  INPUT vis={el.is_visible()} {attrs}")
-                except Exception:  # noqa: BLE001
-                    pass
-                try:
-                    btns = [(el.inner_text() or "").strip()[:40]
-                            for el in (fr.query_selector_all("button, [role='button'], a.button") or [])
-                            if el.is_visible()]
-                    out.append(f"  BUTTONS: {btns}")
-                except Exception:  # noqa: BLE001
-                    pass
-            out.append("===== END DOM =====\n")
-            print("\n".join(out), flush=True)
-        except Exception:  # noqa: BLE001
-            pass
+        dump_dom(page, f"email-gate {tag}")
