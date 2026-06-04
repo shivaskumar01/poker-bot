@@ -71,9 +71,12 @@ def postflop_state(n, hero_seat, hero_cards, board, button=0, *, to_call="0",
              is_button=(s == button), is_hero=(s == hero_seat))
         for s in order
     )
+    b = tuple(parse_cards(board))
+    street = {0: Street.PREFLOP, 3: Street.FLOP, 4: Street.TURN, 5: Street.RIVER}.get(
+        len(b), Street.FLOP)
     return GameState(
         config=TableConfig(small_blind=D("0.5"), big_blind=D("1"), max_seats=n),
-        seats=seats, board=tuple(parse_cards(board)), street=Street.FLOP,
+        seats=seats, board=b, street=street,
         button_seat_id=button, hero_seat_id=hero_seat, pot=D(pot),
         to_call=D(to_call), min_raise=D("1"), actions=(),
     )
@@ -218,3 +221,33 @@ def test_raise_size_is_legal_facing_a_bet():
     d = decide(gs, rng(), iterations=3000)
     if d.action == ActionType.RAISE:
         assert d.amount > D("4")          # raising-to must exceed the call
+
+
+# ---------------- hand-reading leaks (from live play) ----------------
+
+def test_one_pair_river_checks_never_bluffs():
+    # Hand #25 leak: KK is one pair on 4-3-7-5-A -> CHECK for showdown, never shove as a "bluff"
+    gs = postflop_state(2, hero_seat=0, hero_cards="KsKd", board="4s3c7h5dAc", to_call="0", pot="56")
+    assert decide(gs, rng(), iterations=3000).action == ActionType.CHECK
+
+
+def test_ace_high_folds_to_bet_no_float():
+    # Hand #33 leak: ace-high, no pair, no draw, facing a flop bet -> FOLD (don't float)
+    gs = postflop_state(2, hero_seat=0, hero_cards="As7h", board="JsQc3d", to_call="8", pot="16")
+    assert decide(gs, rng(), iterations=3000).action == ActionType.FOLD
+
+
+def test_no_river_air_barrel_into_sticky_caller():
+    # Hand #33 leak: ace-high air on a wet river vs a sticky lag -> almost always give up
+    from pokerbot.opponents.stats import PlayerStats, Stat
+    vik = PlayerStats("vik", hands=324, agg_actions=120, call_actions=40)  # loose-aggressive, sticky
+    vik.vpip = Stat(130, 324)
+    vik.pfr = Stat(104, 324)
+    import random as _r
+    bets = sum(
+        decide(postflop_state(2, hero_seat=0, hero_cards="As7h", board="JsQc3d4d8d",
+                              to_call="0", pot="84"),
+               _r.Random(s), iterations=1200, reads={1: vik}).action == ActionType.BET
+        for s in range(30)
+    )
+    assert bets <= 4   # gives up the river almost every time vs a caller

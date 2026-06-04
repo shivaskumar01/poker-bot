@@ -1,28 +1,32 @@
-"""Postflop decision: equity + pot odds + board texture + STACK DEPTH, exploit-aware.
+"""Postflop decision: hand-read first (made / draw / air), then equity, odds, stacks, reads.
 
-Stack-aware: sizes are capped at the effective stack, and at low SPR (stacks shallow vs the
-pot) with a real hand it just commits (shoves) instead of betting an awkward fraction.
-Raising is gated on actually being able to raise — facing an all-in for more than hero's
-stack, the only choices are call (all-in) or fold.
+Fixes the spew leaks: a "semi-bluff" requires an ACTUAL draw (so it can't fire on the river
+or with ace-high-no-draw); made-but-not-strong hands CHECK for showdown/pot-control instead
+of bluffing; pure bluffs decay hard by street and shut off vs sticky callers; and air FOLDS
+to a bet instead of floating on inflated vs-random equity. Value hands still bet/raise and
+commit at low SPR.
 """
 from __future__ import annotations
 
 import random
 from decimal import Decimal
 
+from ..equity.handinfo import classify_hand
 from ..equity.montecarlo import equity
-from ..model.state import ActionType, GameState
+from ..model.state import ActionType, GameState, Street
+from ..opponents.classify import classify
 from . import exploit, sizing
 from .decision import Decision
 from .mixer import Mixer
 
-VALUE_BASE = 0.55
-VALUE_PER_OPP = 0.04
-RAISE_MARGIN = 0.20
-PURE_BLUFF_BASE = 0.28
+VALUE_EQ = 0.70           # equity that makes a hand a value bet even without a "strong" category
+RAISE_EQ = 0.62           # min equity to turn a value hand into a raise (vs just calling)
+COMMIT_SPR = 1.5
+COMMIT_EQ = 0.55
+PURE_BLUFF_BASE = 0.25    # heads-up, in position, flop
 SEMIBLUFF_BASE = 0.55
-COMMIT_SPR = 1.5          # at/below this stack-to-pot ratio, get strong hands all-in
-COMMIT_EQ = 0.55          # ...if equity is at least this
+_STREET_DECAY = {Street.FLOP: 1.0, Street.TURN: 0.6, Street.RIVER: 0.35}
+_MADE_CALL_PENALTY = {Street.FLOP: 0.06, Street.TURN: 0.10, Street.RIVER: 0.12}
 
 
 def _texture_fraction(gs: GameState) -> Decimal:
@@ -50,8 +54,6 @@ def _spr(gs: GameState) -> float:
 
 
 def _commit(gs: GameState, target: Decimal, eq: float, *, value: bool) -> Decimal:
-    """Round a sized bet up to all-in when committing makes sense (low SPR value, or the
-    sizing already puts most of the stack in)."""
     allin = gs.hero.committed + gs.hero.stack
     if value and eq >= COMMIT_EQ and _spr(gs) <= COMMIT_SPR:
         return allin
@@ -64,24 +66,24 @@ def _size(gs: GameState, mx: Mixer, *, value: bool, read) -> Decimal:
     base = float(_texture_fraction(gs))
     mult = exploit.value_size_multiplier(read) if value else exploit.bluff_size_multiplier(read)
     jitter = 0.85 + 0.33 * mx.rng.random()
-    frac = min(max(base * mult * jitter, 0.33), 1.25)
-    return Decimal(str(round(frac, 2)))
+    return Decimal(str(round(min(max(base * mult * jitter, 0.33), 1.25), 2)))
 
 
-def _bluff_freq(eq: float, n_opp: int, in_position: bool, read) -> float:
-    if n_opp >= 3:
-        return 0.0
-    if 0.30 <= eq < 0.55:
-        base = SEMIBLUFF_BASE
-    elif eq < 0.30:
-        base = PURE_BLUFF_BASE
-    else:
-        base = 0.0
+def _pure_bluff_freq(read, street: Street, in_position: bool) -> float:
+    base = PURE_BLUFF_BASE * _STREET_DECAY[street]
     if not in_position:
         base *= 0.70
-    if n_opp == 2:
-        base *= 0.45
+    if street == Street.RIVER:
+        # only fire the river as a bluff vs a KNOWN folder; never into callers/unknowns
+        folder = read is not None and (
+            classify(read) == "nit" or read.r("fold_to_cbet_flop") > 0.55)
+        if not folder:
+            return 0.0
     return exploit.adj_bluff_freq(base, read)
+
+
+def _semibluff_freq(read, street: Street) -> float:
+    return exploit.adj_bluff_freq(SEMIBLUFF_BASE * (1.0 if street == Street.FLOP else 0.65), read)
 
 
 def decide_postflop(gs: GameState, rng: random.Random | None = None,
@@ -90,35 +92,50 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
     hero = gs.hero
     n_opp = gs.num_live_opponents
     eq = equity(list(hero.cards), list(gs.board), n_opp, iterations=iterations, rng=rng)
-    value_threshold = exploit.adj_value_threshold(
-        min(0.85, VALUE_BASE + VALUE_PER_OPP * (n_opp - 1)), read)
+    info = classify_hand(hero.cards, gs.board)
+    street = gs.street
+    river = street == Street.RIVER
     ip = _in_position(gs)
-    is_draw = 0.30 <= eq < 0.55
-    raise_ok = sizing.can_raise(gs)               # False when calling would be all-in
+    raise_ok = sizing.can_raise(gs)
+    value_threshold = exploit.adj_value_threshold(min(0.85, VALUE_EQ + 0.04 * (n_opp - 1)), read)
+    is_value = info.strong or eq >= value_threshold
+    air = not info.made and not info.draw
 
-    if gs.to_call > 0:                            # facing a bet
+    if gs.to_call > 0:                                  # ---- facing a bet ----
         required = exploit.adj_call_required(gs.pot_odds, read)
-        call_amt = min(gs.to_call, hero.stack)    # capped: calling can be all-in for less
-        if raise_ok and eq >= value_threshold + RAISE_MARGIN:
-            tgt = _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=True, read=read)), eq, value=True)
-            return Decision(ActionType.RAISE, tgt, f"value raise eq={eq:.2f}", equity=eq)
-        if raise_ok and is_draw and n_opp == 1 and mx.chance(exploit.semibluff_raise_freq(read)):
-            tgt = _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False)
-            return Decision(ActionType.RAISE, tgt, f"semi-bluff raise eq={eq:.2f}", equity=eq, confidence=0.5)
-        if raise_ok and eq < required and n_opp == 1 and mx.chance(exploit.bluff_raise_freq(read)):
-            tgt = _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False)
-            return Decision(ActionType.RAISE, tgt, f"bluff raise eq={eq:.2f} (vs folder)", equity=eq, confidence=0.35)
-        if eq >= required:
-            return Decision(ActionType.CALL, call_amt, f"call eq={eq:.2f} >= price {required:.2f}", equity=eq)
-        return Decision(ActionType.FOLD, Decimal("0"), f"fold eq={eq:.2f} < price {required:.2f}", equity=eq)
+        call_amt = min(gs.to_call, hero.stack)
+        if raise_ok and is_value and eq >= RAISE_EQ:
+            if info.strong and mx.chance(0.25):         # mix a trap with the nuts-ish
+                return Decision(ActionType.CALL, call_amt, f"trap call {info.category} eq={eq:.2f}", equity=eq)
+            return Decision(ActionType.RAISE,
+                            _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=True, read=read)), eq, value=True),
+                            f"value raise {info.category} eq={eq:.2f}", equity=eq)
+        if raise_ok and info.draw and not river and n_opp == 1 and mx.chance(exploit.semibluff_raise_freq(read)):
+            return Decision(ActionType.RAISE,
+                            _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False),
+                            f"semi-bluff raise (draw) eq={eq:.2f}", equity=eq, confidence=0.5)
+        if info.made and eq >= required + _MADE_CALL_PENALTY[street]:
+            return Decision(ActionType.CALL, call_amt, f"call {info.category} eq={eq:.2f}", equity=eq)
+        if info.draw and not river and eq >= required:
+            return Decision(ActionType.CALL, call_amt, f"call draw eq={eq:.2f} (price {required:.2f})", equity=eq)
+        if raise_ok and air and not river and n_opp == 1 and mx.chance(exploit.bluff_raise_freq(read)):
+            return Decision(ActionType.RAISE,
+                            _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False),
+                            "bluff raise (vs folder)", equity=eq, confidence=0.25)
+        return Decision(ActionType.FOLD, Decimal("0"), f"fold {info.category} eq={eq:.2f} < price {required:.2f}", equity=eq)
 
-    # checked to hero (to_call == 0)
-    if eq >= value_threshold:
-        tgt = _commit(gs, sizing.postflop_bet_to(gs, _size(gs, mx, value=True, read=read)), eq, value=True)
-        return Decision(ActionType.BET, tgt, f"value bet eq={eq:.2f} ({n_opp} opp)", equity=eq)
-    p = _bluff_freq(eq, n_opp, ip, read)
-    if mx.chance(p):
-        tag = "semi-bluff" if is_draw else "bluff"
-        tgt = _commit(gs, sizing.postflop_bet_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False)
-        return Decision(ActionType.BET, tgt, f"{tag} eq={eq:.2f} p={p:.2f}", equity=eq, confidence=p)
-    return Decision(ActionType.CHECK, Decimal("0"), f"check eq={eq:.2f}", equity=eq)
+    # ---- checked to hero (to_call == 0) ----
+    if is_value:
+        return Decision(ActionType.BET,
+                        _commit(gs, sizing.postflop_bet_to(gs, _size(gs, mx, value=True, read=read)), eq, value=True),
+                        f"value bet {info.category} eq={eq:.2f} ({n_opp} opp)", equity=eq)
+    if info.draw and not river and n_opp <= 2 and mx.chance(_semibluff_freq(read, street)):
+        return Decision(ActionType.BET,
+                        _commit(gs, sizing.postflop_bet_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False),
+                        f"semi-bluff (draw) eq={eq:.2f}", equity=eq, confidence=0.5)
+    if air and n_opp == 1 and mx.chance(_pure_bluff_freq(read, street, ip)):
+        return Decision(ActionType.BET,
+                        _commit(gs, sizing.postflop_bet_to(gs, _size(gs, mx, value=False, read=read)), eq, value=False),
+                        f"bluff eq={eq:.2f}", equity=eq, confidence=0.25)
+    reason = "give up" if air else f"pot control / showdown ({info.category})"
+    return Decision(ActionType.CHECK, Decimal("0"), f"check {reason} eq={eq:.2f}", equity=eq)

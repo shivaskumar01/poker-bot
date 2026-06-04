@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from ..model.positions import postflop_action_order, preflop_action_order
 from ..model.state import ActionType, GameState, SeatStatus, Street
+from ..opponents.classify import classify
 from . import exploit, ranges, sizing
 from .decision import Decision
 from .mixer import Mixer
@@ -85,8 +86,18 @@ def _call_amount(gs: GameState) -> Decimal:
     return min(gs.to_call, gs.hero.stack)
 
 
-def _open_to(gs: GameState, mx: Mixer, num_limpers: int = 0) -> Decimal:
-    return sizing.open_raise_to(gs, num_limpers, mx.choose(ranges.OPEN_SIZE_WEIGHTS))
+def _open_to(gs: GameState, mx: Mixer, read, num_limpers: int = 0) -> Decimal:
+    """Opponent-aware open size: bigger vs loose callers (charge them), smaller vs nits.
+    Keeps a small jitter for unpredictability but never min-raises a premium into a station."""
+    base = Decimal("2.5")
+    if read is not None and read.confidence >= exploit.MIN_CONF:
+        label = classify(read)
+        if label in ("station", "lag", "maniac") or read.r("vpip") >= 0.35:
+            base = Decimal("3.0")
+        elif label == "nit":
+            base = Decimal("2.0")
+    jitter = Decimal(str(round((mx.rng.random() - 0.5) * 0.4, 2)))   # +-0.2
+    return sizing.open_raise_to(gs, num_limpers, max(Decimal("2.0"), base + jitter))
 
 
 def _is_3bet_bluff(cls: str) -> bool:
@@ -110,7 +121,7 @@ def decide_preflop(gs: GameState, rng: random.Random | None = None, read=None) -
         return _push_fold(gs, ctx, cls, pct, hero_bb, raise_ok)
     if ctx.num_raises == 0:
         fn = _open_or_fold if ctx.num_limpers == 0 else _iso_or_fold
-        return fn(gs, ctx, cls, pct, raise_ok, mx)
+        return fn(gs, ctx, cls, pct, raise_ok, mx, read)
     if ctx.num_raises == 1:
         return _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok)
     if ctx.num_raises == 2:
@@ -118,12 +129,12 @@ def decide_preflop(gs: GameState, rng: random.Random | None = None, read=None) -
     return _vs_4bet_plus(gs, cls, pct, raise_ok)
 
 
-def _open_or_fold(gs, ctx, cls, pct, raise_ok, mx):
+def _open_or_fold(gs, ctx, cls, pct, raise_ok, mx, read):
     frac = ranges.rfi_fraction(ctx.players_left, is_sb=ctx.is_sb,
                                heads_up_match=ctx.heads_up_match, blind_vs_blind=ctx.blind_vs_blind)
     if pct <= frac:
         if raise_ok:
-            return Decision(ActionType.RAISE, _open_to(gs, mx),
+            return Decision(ActionType.RAISE, _open_to(gs, mx, read),
                             f"open {cls} ({ctx.hero_pos}, top {frac:.0%})")
         return Decision(ActionType.CALL, _call_amount(gs), f"call all-in {cls} (short)")
     if gs.to_call <= 0:
@@ -131,11 +142,11 @@ def _open_or_fold(gs, ctx, cls, pct, raise_ok, mx):
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} (outside RFI {frac:.0%})")
 
 
-def _iso_or_fold(gs, ctx, cls, pct, raise_ok, mx):
+def _iso_or_fold(gs, ctx, cls, pct, raise_ok, mx, read):
     frac = ranges.iso_fraction(ctx.players_left, ctx.num_limpers, is_sb=ctx.is_sb,
                                heads_up_match=ctx.heads_up_match, blind_vs_blind=ctx.blind_vs_blind)
     if pct <= frac and raise_ok:
-        return Decision(ActionType.RAISE, _open_to(gs, mx, ctx.num_limpers),
+        return Decision(ActionType.RAISE, _open_to(gs, mx, read, ctx.num_limpers),
                         f"isolate {cls} over {ctx.num_limpers} limper(s)")
     if gs.to_call <= 0:
         return Decision(ActionType.CHECK, Decimal("0"), f"check {cls} in limped pot")
