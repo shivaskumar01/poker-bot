@@ -6,7 +6,7 @@ raise-to, hero all-in]. PokerNow takes a raise-TO amount.
 """
 from __future__ import annotations
 
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from ..model.state import GameState
 
@@ -15,6 +15,14 @@ CENT = Decimal("0.01")
 
 def _q(x: Decimal) -> Decimal:
     return x.quantize(CENT, rounding=ROUND_DOWN)
+
+
+def _round_to_blind(gs: GameState, amount: Decimal) -> Decimal:
+    """Round a preflop raise to a clean multiple of the small blind (no 1.49-type sizes)."""
+    step = gs.config.small_blind
+    if step <= 0:
+        return amount
+    return (amount / step).to_integral_value(rounding=ROUND_HALF_UP) * step
 
 
 def _call_level(gs: GameState) -> Decimal:
@@ -43,17 +51,17 @@ def legalize_raise_to(gs: GameState, target: Decimal) -> Decimal:
 def open_raise_to(gs: GameState, num_limpers: int = 0,
                   bb_multiple: Decimal = Decimal("2.5")) -> Decimal:
     bb = gs.config.big_blind
-    return legalize_raise_to(gs, bb * bb_multiple + bb * num_limpers)
+    return legalize_raise_to(gs, _round_to_blind(gs, bb * bb_multiple + bb * num_limpers))
 
 
 def threebet_to(gs: GameState, *, in_position: bool) -> Decimal:
-    """3-bet to ~3x (IP) / ~4x (OOP) the raise we face."""
+    """3-bet to at least 3x (IP) / 4x (OOP) the raise we face."""
     mult = Decimal("3") if in_position else Decimal("4")
-    return legalize_raise_to(gs, _call_level(gs) * mult)
+    return legalize_raise_to(gs, _round_to_blind(gs, _call_level(gs) * mult))
 
 
 def fourbet_to(gs: GameState) -> Decimal:
-    return legalize_raise_to(gs, _call_level(gs) * Decimal("2.2"))
+    return legalize_raise_to(gs, _round_to_blind(gs, _call_level(gs) * Decimal("2.3")))
 
 
 def postflop_bet_to(gs: GameState, pot_fraction: Decimal) -> Decimal:

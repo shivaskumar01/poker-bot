@@ -7,11 +7,11 @@ read from the action buttons; the dealer seat from `.dealer-position-N`.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from ..model.cards import Card
-from ..model.state import GameState, Seat, SeatStatus, Street, TableConfig
+from ..model.state import IN_HAND, GameState, Seat, SeatStatus, Street, TableConfig
 
 _STATUS_MAP = {
     "active": SeatStatus.ACTIVE, "folded": SeatStatus.FOLDED, "all_in": SeatStatus.ALL_IN,
@@ -116,6 +116,37 @@ def to_game_state(raw: RawObservation, small_blind: Decimal, big_blind: Decimal,
         button_seat_id=button, hero_seat_id=hero.seat_id,
         pot=pot, to_call=to_call, min_raise=big_blind, actions=tuple(actions),
     )
+
+
+def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal) -> GameState:
+    """Rebuild preflop committed amounts + pot from blinds and the amount-to-call.
+
+    PokerNow shows 0 in the pot display preflop (bets sit in front of players) and the live
+    scraper can't read per-seat bet chips — so without this, pot=0 and pot-odds blow up,
+    making the bot fold everything to a 3-bet. Heads-up-accurate; multiway approximate.
+    """
+    if gs.street != Street.PREFLOP:
+        return gs
+    pos = gs.positions
+    hero_blind = big_blind if pos.get(gs.hero_seat_id) == "BB" else small_blind
+    lone = gs.live_opponents[0].seat_id if len(gs.live_opponents) == 1 else None
+
+    seats = []
+    for s in gs.seats:
+        if s.status not in IN_HAND:
+            seats.append(s)
+            continue
+        if s.seat_id == gs.hero_seat_id:
+            committed = hero_blind
+        elif gs.to_call > 0 and s.seat_id == lone:
+            committed = hero_blind + gs.to_call          # the heads-up raiser's total
+        else:
+            p = pos.get(s.seat_id)
+            committed = big_blind if p == "BB" else (small_blind if p == "SB" else Decimal("0"))
+        seats.append(replace(s, committed=committed, total_committed=committed))
+
+    pot = sum((x.committed for x in seats if x.status in IN_HAND), Decimal("0"))
+    return replace(gs, seats=tuple(seats), pot=pot)
 
 
 class Scraper:

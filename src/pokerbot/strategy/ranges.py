@@ -124,11 +124,12 @@ def hand_equity(cls: str) -> float:
 
 def defense_equity_threshold(price: float, *, in_position: bool, vs_late_open: bool,
                              heads_up: bool) -> float:
-    """Min equity to flat-call a raise given the price; wider (lower) vs wide/late openers."""
+    """Min equity to flat-call a raise given the price; wider (lower) vs wide/late openers.
+    Capped at 0.55 so a strong hand never folds to a raise (and as a safety vs bad pot reads)."""
     penalty = 0.0 if in_position else 0.05      # realize less equity out of position
     if not (heads_up or vs_late_open):
         penalty += 0.08                          # tight/early opener -> their range is strong
-    return price + penalty
+    return min(price + penalty, 0.55)
 
 
 def threebet_call_equity_threshold(price: float, *, in_position: bool) -> float:

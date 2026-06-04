@@ -251,3 +251,27 @@ def test_no_river_air_barrel_into_sticky_caller():
         for s in range(30)
     )
     assert bets <= 4   # gives up the river almost every time vs a caller
+
+
+# ---------------- preflop: don't fold bettable hands to a raise / clean sizing ----------------
+
+def test_strong_hands_never_fold_to_a_raise():
+    # KQs, AKo, ATo in the BB must defend (call or 3-bet) a standard HU open, never fold
+    for hc in ("KsQs", "AhKd", "AhTd"):
+        gs = preflop_state(2, hero_seat=1, hero_cards=hc, button=0, raises=[(0, "1.5")])
+        assert decide(gs, rng()).action in (ActionType.CALL, ActionType.RAISE), hc
+
+
+def test_strong_hands_never_fold_to_a_3bet():
+    # hero opens, villain 3-bets -> AKo / KQs / ATs continue (call or 4-bet)
+    for hc in ("AhKd", "KsQs", "AhTh"):
+        gs = preflop_state(2, hero_seat=0, hero_cards=hc, button=0, raises=[(0, "1.5"), (1, "4.5")])
+        assert decide(gs, rng()).action in (ActionType.CALL, ActionType.RAISE), hc
+
+
+def test_open_size_is_a_clean_multiple_of_the_blind():
+    # blinds 0.5/1.0 -> opens must be clean multiples of the small blind (no 1.49-type sizes)
+    for s in range(10):
+        amt = decide(preflop_state(2, hero_seat=0, hero_cards="AhKs", button=0),
+                     random.Random(s)).amount
+        assert amt % D("0.5") == 0, amt

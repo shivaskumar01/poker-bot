@@ -93,6 +93,22 @@ def test_to_game_state_real_heads_up_hand():
     assert gs.board == (Card("7", "s"), Card("2", "d"), Card("K", "c"))
 
 
+def test_reconstruct_preflop_fixes_pot_and_committed():
+    from pokerbot.io.scraper import reconstruct_preflop
+    # live: hero BB, villain raised to 2.0; scraper read pot=0 with no per-seat bets
+    raw = RawObservation(
+        seats=[RawSeat(1, "robot", "100", is_hero=True), RawSeat(7, "vik", "100")],
+        board=[], pot="0", to_call="1.0", button_seat_id=7,
+    )
+    gs = to_game_state(raw, D("0.5"), D("1.0"))
+    assert gs.pot == D("0")                       # broken before reconstruction
+    fixed = reconstruct_preflop(gs, D("0.5"), D("1.0"))
+    assert fixed.hero.committed == D("1.0")        # hero's BB
+    assert fixed.seat(7).committed == D("2.0")     # raiser total = BB + to_call
+    assert fixed.pot == D("3.0")
+    assert abs(fixed.pot_odds - (1.0 / 4.0)) < 1e-9  # now a sane price, not ~1.0
+
+
 def test_executor_consent_gate():
     # observe mode: never acts, never touches the (None) page
     ex = Executor(page=None, selectors=Selectors(), mode="observe", players_consent=False)

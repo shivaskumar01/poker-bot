@@ -87,17 +87,19 @@ def _call_amount(gs: GameState) -> Decimal:
 
 
 def _open_to(gs: GameState, mx: Mixer, read, num_limpers: int = 0) -> Decimal:
-    """Opponent-aware open size: bigger vs loose callers (charge them), smaller vs nits.
-    Keeps a small jitter for unpredictability but never min-raises a premium into a station."""
-    base = Decimal("2.5")
+    """Opponent-aware open size in CLEAN multiples: bigger vs loose callers (charge them),
+    smaller vs nits. Varies between clean sizes for unpredictability (never min-raises loose)."""
     if read is not None and read.confidence >= exploit.MIN_CONF:
         label = classify(read)
         if label in ("station", "lag", "maniac") or read.r("vpip") >= 0.35:
-            base = Decimal("3.0")
+            mult = mx.choose([(Decimal("3.0"), 3.0), (Decimal("4.0"), 1.0)])  # loose -> 3x mostly, some 4x
         elif label == "nit":
-            base = Decimal("2.0")
-    jitter = Decimal(str(round((mx.rng.random() - 0.5) * 0.4, 2)))   # +-0.2
-    return sizing.open_raise_to(gs, num_limpers, max(Decimal("2.0"), base + jitter))
+            mult = Decimal("2.0")
+        else:
+            mult = mx.choose([(Decimal("2.5"), 2.0), (Decimal("3.0"), 1.0)])
+    else:
+        mult = mx.choose([(Decimal("2.5"), 2.0), (Decimal("3.0"), 1.0)])
+    return sizing.open_raise_to(gs, num_limpers, mult)
 
 
 def _is_3bet_bluff(cls: str) -> bool:

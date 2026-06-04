@@ -13,12 +13,13 @@ import os
 import random
 import sys
 import time
+from dataclasses import replace
 from decimal import Decimal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pokerbot.io.browser import Browser                       # noqa: E402
-from pokerbot.io.scraper import Scraper, to_game_state         # noqa: E402
+from pokerbot.io.browser import Browser                                      # noqa: E402
+from pokerbot.io.scraper import Scraper, reconstruct_preflop, to_game_state  # noqa: E402
 from pokerbot.io.selectors import Selectors                    # noqa: E402
 from pokerbot.model.state import Action, ActionType, Street     # noqa: E402
 from pokerbot.opponents.classify import classify                # noqa: E402
@@ -69,10 +70,10 @@ def main() -> None:
             if scraper.is_hero_turn():
                 try:
                     raw = scraper.read_observation()
-                    gs = to_game_state(raw, sb, bb)
+                    gs = reconstruct_preflop(to_game_state(raw, sb, bb), sb, bb)
                     actions = _synth_actions(gs, bb)
                     if actions:
-                        gs = to_game_state(raw, sb, bb, actions=actions)
+                        gs = replace(gs, actions=actions)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),
                            str(gs.to_call), gs.street.name)
                     if sig != last:
