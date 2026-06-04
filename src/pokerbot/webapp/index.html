@@ -82,10 +82,10 @@
         <div><label>Small blind (fallback)</label><input id="sb" value="0.25"/></div>
         <div><label>Big blind (fallback)</label><input id="bb" value="0.50"/></div>
       </div>
-      <label>Bot buy-in (chips)</label>
-      <input id="buyin" placeholder="e.g. 200"/>
-      <label>Your name (blank = auto-detect)</label>
-      <input id="hero" placeholder="auto"/>
+      <label>Buy-in amount (cash game)</label>
+      <input id="buyin" type="number" step="0.01" min="0" inputmode="decimal" placeholder="e.g. 100.00"/>
+      <label>Bot name at the table (needed to auto-join a seat)</label>
+      <input id="hero" placeholder="e.g. robot"/>
       <label>Mode</label>
       <select id="mode"><option value="observe">Observe (watch only)</option><option value="execute">Execute (bot acts)</option></select>
       <label class="check"><input type="checkbox" id="consent"/> Everyone at the table consents to a bot</label>
@@ -93,7 +93,7 @@
         <button class="btn-go" id="start">Start</button>
         <button class="btn-stop" id="stop">Stop</button>
       </div>
-      <div class="hint">Execute requires consent. Create a file named <b>STOP</b> in the project to halt instantly.</div>
+      <div class="hint">On <b>Start</b>, the bot takes a random open seat and buys in for the amount above (needs a name + buy-in). Execute requires consent. Create a file named <b>STOP</b> to halt instantly.</div>
     </div>
     <div class="panel" style="margin-top:16px">
       <h2>Session</h2>
@@ -205,6 +205,7 @@ $('start').onclick = async ()=>{
 };
 $('stop').onclick = ()=> fetch('/api/stop',{method:'POST'});
 $('rebuyBtn').onclick = ()=> fetch('/api/rebuy',{method:'POST'});
+$('buyin').addEventListener('blur', e=>{ const v=parseFloat(e.target.value); if(!isNaN(v)) e.target.value=v.toFixed(2); });
 $('analyze').onclick = async (e)=>{ e.target.textContent='learning…';
   const r = await (await fetch('/api/analyze',{method:'POST'})).json();
   e.target.textContent='Re-learn from logs'; await loadProfiles();

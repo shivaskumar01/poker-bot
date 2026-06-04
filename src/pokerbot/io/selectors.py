@@ -19,6 +19,15 @@ class Selectors:
     current_actor_class: str = "decision-current"
     folded_class: str = "fold"                    # appears in a folded seat's class
 
+    # --- joining the table (auto-seat): empty seats are .table-player.table-player-seat; clicking
+    #     one opens a name prompt (first time) then a buy-in dialog. Best-effort + text fallbacks. ---
+    empty_seat: str = ".table-player.table-player-seat"
+    name_input: str = (".you-name-ctn input, [class*='name'] input[type='text'], "
+                       "input[name*='name' i], input[placeholder*='name' i]")
+    buyin_input: str = ("[class*='buyin'] input, [class*='buy-in'] input, [class*='add-chips'] input, "
+                        "[class*='stack'] input, .modal input[type='number'], "
+                        "input[type='number'], input[type='range']")
+
     # --- cards (.card-container with card-<suit> + card-s-<rank>; .flipped = face up) ---
     hero_card: str = ".you-player .card-container.flipped"
     board_card: str = ".table-cards .card-container.flipped"

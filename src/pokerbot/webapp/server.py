@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import glob
 import os
+import random
 import threading
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -16,6 +17,7 @@ from ..io.browser import Browser
 from ..io.executor import Executor
 from ..io.log_parser import parse_file
 from ..io.scraper import Scraper
+from ..io.seater import Seater
 from ..io.selectors import Selectors
 from ..opponents.classify import classify
 from ..opponents.store import StatsStore
@@ -131,10 +133,19 @@ class BotController:
             self.browser = Browser(profile_dir=os.path.expanduser("~/.pokerbot-profile"))
             self._set(status="launching browser…")
             page = self.browser.open(url)
-            self._set(status="browser open — log in & sit at the table; the bot acts on your turn")
+            sel = Selectors()
+            if cfg.hero_name and cfg.buy_in > 0:        # auto-seat: random open seat + buy-in
+                self._set(status=f"taking an open seat as “{cfg.hero_name}” "
+                                 f"(buy-in {cfg.buy_in})…")
+                seater = Seater(page, sel, cfg.hero_name, cfg.buy_in, random.Random())
+                ok = seater.take_seat()
+                self._set(status="seated — watching for your turn" if ok else
+                          "couldn't auto-seat — sit manually. " + (seater.last_diag or ""))
+            else:
+                self._set(status="browser open — sit at the table; the bot acts on your turn "
+                                 "(tip: set your name + buy-in to auto-seat next time)")
             db = os.path.join(ROOT, cfg.db_path)
             store = StatsStore(db) if os.path.exists(db) else None
-            sel = Selectors()
             scraper = Scraper(page, sel, hero_name=cfg.hero_name)
             executor = Executor(page, sel, mode=mode, players_consent=consent)
             self.guard = SessionGuard(Limits(cfg.stop_loss_bb, cfg.stop_win_bb, cfg.max_hands),
