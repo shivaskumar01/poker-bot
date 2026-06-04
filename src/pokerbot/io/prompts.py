@@ -1,19 +1,18 @@
 """PokerNow's email LOGIN gate, handled end-to-end in the Playwright thread.
 
 The gate is two screens: (1) enter an email, (2) "confirm the code that was sent to your email".
-A made-up string fails, and the two screens' inputs look alike, so this is a small STATE MACHINE
-that is airtight about three things:
+Earlier versions decided which screen they were on by reading inputs/text, which broke when the
+code box looked like an email box (and when the modal lives in an iframe) — the bot typed the email
+into the code box. This version is a STATE MACHINE that does not depend on guessing the screen:
 
-  * ONE inbox per login. The throwaway address is created once and reused; we never spin up a new
-    inbox (which would change the address the code was sent to).
-  * Screen detection by the page's TEXT, not by ambiguous input selectors. The code screen says
-    "confirm the code…", so it's detected as CODE and we NEVER type the email into the code box
-    (the bug this replaces).
-  * Reuse across calls. The caller holds one EmailLogin instance, so polling continues against the
-    same inbox even if `run()` is invoked again.
+  * ONE inbox per login (created once, reused; the caller holds the instance).
+  * PHASE-based: before we've submitted an email we're in EMAIL phase; after, we're in CODE phase
+    and we ONLY ever type the 6-digit code — never the email — so a mis-fill is impossible.
+  * Searches EVERY frame (iframe-safe) for the field and submit button.
+  * If it has the code but can't find the box, it surfaces the code to the UI so the user types it.
+  * Prints a full DOM snapshot of the gate (all frames, inputs, buttons) for calibration.
 
-Disclosed home game: this gets the bot's own seat past a login form, not detection evasion. Any
-failure (mail.tm down, code never arrives) degrades cleanly to "finish it manually".
+Disclosed home game: this gets the bot's own seat past a login form, not detection evasion.
 """
 from __future__ import annotations
 
@@ -25,20 +24,13 @@ from .email_inbox import TempInbox
 
 _SUBMIT_RE = re.compile(r"authenticate|continue|submit|confirm|verify|proceed|log\s?in|sign\s?in|"
                         r"next|done|^\s*ok\s*$|^\s*go\s*$", re.I)
-# The code screen is unmistakable in copy ("confirm the code", "almost there"); the email screen is
-# whatever's left that still wants an address. Detecting CODE first is what prevents mis-fills.
 _CODE_SCREEN = re.compile(r"confirm the code|code (that )?was sent|verification code|enter (the )?code|"
                           r"6[\s-]?digit|one[\s-]?time|almost there", re.I)
 _EMAIL_SCREEN = re.compile(r"authenticate your email|enter your email|verify your email|"
                            r"e-?mail address|to proceed with your login", re.I)
 _SKIP_TYPES = {"hidden", "checkbox", "radio", "button", "submit", "reset", "range", "file", "image"}
-
-
-def _visible(page, selector: str):
-    try:
-        return [el for el in (page.query_selector_all(selector) or []) if el.is_visible()]
-    except Exception:  # noqa: BLE001
-        return []
+_DUMP_ATTRS = ("type", "name", "id", "placeholder", "maxlength", "inputmode", "autocomplete",
+               "aria-label", "class")
 
 
 def _type_of(el) -> str:
@@ -60,96 +52,61 @@ class EmailLogin:
         self.log = log
         self.inbox = None
         self.address = None
+        self.code = None
         self._emailed = False
         self._failed = False
+        self._dumped = False
         self._entered: set[str] = set()
         self.done = False
 
     # --- public entry point -------------------------------------------------
     def run(self, page, sel, *, sleep=time.sleep, should_stop=lambda: False,
             timeout: float = 180.0) -> bool:
-        """Block until the login is resolved (or times out). Returns True if it completed/advanced;
-        False if there was no gate to handle or it gave up (then finish manually). Cheap no-op when
-        no email/code screen is present, so it's safe to call from a polling loop."""
-        if self.done or not self._gate(page, sel):
-            return self.done
+        if self.done:
+            return True
+        if not self._emailed and not self._gate(page, sel):
+            return False
+        self._dump(page, "gate detected")
         deadline = time.time() + timeout
         while time.time() < deadline and not should_stop():
             if self._failed:
                 return False
-            screen = self._screen(page, sel)
-            if screen == "email":
-                self._do_email(page, sel, sleep)
-                sleep(1.5)                       # let the code screen render
-            elif screen == "code":
-                if self._do_code(page, sel, sleep):
-                    self.done = True
-                    self.log("email login complete")
-                    return True
-                sleep(self.POLL)                 # code not in the inbox yet — keep waiting
-            else:
-                return self._emailed             # gate cleared on its own
-        self.log("email login timed out — please finish it manually")
-        return False
+            if not self._emailed:
+                if not self._enter_email(page, sel, sleep):
+                    if not self._gate(page, sel):
+                        return False                 # gate vanished before we acted
+                    sleep(1.0)
+                else:
+                    sleep(2.0)                       # let the code screen render
+                continue
+            # CODE phase — email already sent, so we ONLY enter codes from here on
+            if self._enter_code_when_ready(page, sel, sleep):
+                self.done = True
+                self.log("email login complete")
+                return True
+            if self.code is None and not self._gate(page, sel):
+                self.done = True                     # gate cleared, no code ever needed
+                return True
+            sleep(self.POLL)
+        if self.code:
+            self.log(f"timed out filling it — type this code into PokerNow yourself: {self.code}")
+        else:
+            self.log("no verification code arrived — PokerNow may block disposable email; "
+                     "finish the login manually")
+        return self.done
 
-    # --- screen detection (TEXT first, so CODE can't be mistaken for EMAIL) --
-    def _page_text(self, page) -> str:
-        try:
-            return (page.inner_text("body") or "").lower()
-        except Exception:  # noqa: BLE001
-            return ""
-
-    def _gate(self, page, sel) -> bool:
-        if self._email_fields(page, sel) or self._code_fields(page, sel):
-            return True
-        t = self._page_text(page)
-        return bool(_CODE_SCREEN.search(t) or _EMAIL_SCREEN.search(t))
-
-    def _screen(self, page, sel) -> str | None:
-        t = self._page_text(page)
-        if _CODE_SCREEN.search(t):               # unambiguous -> CODE (never fill email here)
-            return "code"
-        if self._email_fields(page, sel) or _EMAIL_SCREEN.search(t):
-            return "email"
-        if self._code_fields(page, sel):
-            return "code"
-        return None
-
-    # --- field discovery ----------------------------------------------------
-    def _inputs(self, page):
-        out = []
-        for el in (page.query_selector_all("input, textarea") or []):
-            try:
-                if el.is_visible() and _type_of(el) not in _SKIP_TYPES:
-                    out.append(el)
-            except Exception:  # noqa: BLE001
-                pass
-        return out
-
-    def _email_fields(self, page, sel):
-        fields = _visible(page, sel.email_input)
-        if fields:
-            return fields
-        return [el for el in self._inputs(page) if _type_of(el) == "email"]
-
-    def _code_fields(self, page, sel):
-        fields = [el for el in _visible(page, sel.code_input) if _type_of(el) != "email"]
-        if fields:
-            return fields
-        return [el for el in self._inputs(page) if _type_of(el) != "email"]
-
-    # --- actions ------------------------------------------------------------
-    def _do_email(self, page, sel, sleep) -> None:
+    # --- phases -------------------------------------------------------------
+    def _enter_email(self, page, sel, sleep) -> bool:
         fields = self._email_fields(page, sel)
         if not fields:
-            return
+            return False
         if self.inbox is None:
             try:
                 self.inbox = self._factory(self.rng)
             except Exception as e:  # noqa: BLE001
                 self.log(f"couldn't create a verification inbox ({e}); enter an email manually")
                 self._failed = True
-                return
+                return False
             self.address = self.inbox.address
             self.log(f"using verification email {self.address}")
         for el in fields:
@@ -157,25 +114,75 @@ class EmailLogin:
         sleep(0.4 + self.rng.random() * 0.6)
         self._submit(page)
         self._emailed = True
-        self.log("submitted the email — waiting for the code")
+        self.log("submitted the email — waiting for the code email to arrive")
+        return True
 
-    def _do_code(self, page, sel, sleep) -> bool:
-        fields = self._code_fields(page, sel)
-        if not fields:
-            return False
+    def _enter_code_when_ready(self, page, sel, sleep) -> bool:
         if self.inbox is None:
-            self.log("on the code screen but no inbox is known — enter the code manually")
             self._failed = True
             return False
-        code = self.inbox.poll_once(log=self.log)
-        if not code or code in self._entered:
+        if self.code is None:
+            self.code = self.inbox.poll_once(log=self.log)
+            if self.code:
+                self.log(f"got verification code {self.code} from the email")
+        if not self.code:
             return False
-        self._entered.add(code)
-        self.log(f"got code {code} — entering it")
-        self._enter_code(fields, code)
+        fields = self._code_fields(page, sel)
+        if not fields:
+            self._dump(page, "have code, no code box")
+            self.log(f"couldn't find the code box — type this code into PokerNow yourself: {self.code}")
+            return False
+        if self.code in self._entered:
+            return False
+        self._entered.add(self.code)
+        self.log(f"entering verification code {self.code}")
+        self._enter_code(fields, self.code)
         sleep(0.3 + self.rng.random() * 0.5)
         self._submit(page)
         return True
+
+    # --- frame-aware DOM access (handles the modal living in an iframe) ------
+    def _scopes(self, page):
+        try:
+            frames = getattr(page, "frames", None)
+            return list(frames) if frames else [page]
+        except Exception:  # noqa: BLE001
+            return [page]
+
+    def _all_visible(self, page, selector):
+        out = []
+        for fr in self._scopes(page):
+            try:
+                out += [el for el in (fr.query_selector_all(selector) or []) if el.is_visible()]
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    def _text(self, page) -> str:
+        parts = []
+        for fr in self._scopes(page):
+            try:
+                parts.append(fr.inner_text("body") or "")
+            except Exception:  # noqa: BLE001
+                pass
+        return " ".join(parts).lower()
+
+    def _gate(self, page, sel) -> bool:
+        if self._all_visible(page, sel.email_input) or self._all_visible(page, sel.code_input):
+            return True
+        t = self._text(page)
+        return bool(_CODE_SCREEN.search(t) or _EMAIL_SCREEN.search(t))
+
+    def _inputs(self, page):
+        return [el for el in self._all_visible(page, "input, textarea") if _type_of(el) not in _SKIP_TYPES]
+
+    def _email_fields(self, page, sel):
+        fields = self._all_visible(page, sel.email_input)
+        return fields or [el for el in self._inputs(page) if _type_of(el) == "email"]
+
+    def _code_fields(self, page, sel):
+        fields = [el for el in self._all_visible(page, sel.code_input) if _type_of(el) != "email"]
+        return fields or [el for el in self._inputs(page) if _type_of(el) != "email"]
 
     # --- low-level DOM ------------------------------------------------------
     def _fill(self, el, text) -> None:
@@ -194,16 +201,47 @@ class EmailLogin:
             self._fill(fields[0], code)
             last = fields[0]
         try:
-            last.press("Enter")                  # many OTP forms confirm on Enter
+            last.press("Enter")                      # many OTP forms confirm on Enter
         except Exception:  # noqa: BLE001
             pass
 
     def _submit(self, page) -> bool:
-        for el in (page.query_selector_all("button, a, [role='button'], .button, .alert-btn") or []):
+        for fr in self._scopes(page):
             try:
-                if el.is_visible() and _SUBMIT_RE.search((el.inner_text() or "").strip()):
-                    el.click()
-                    return True
+                for el in (fr.query_selector_all("button, a, [role='button'], .button, .alert-btn") or []):
+                    if el.is_visible() and _SUBMIT_RE.search((el.inner_text() or "").strip()):
+                        el.click()
+                        return True
             except Exception:  # noqa: BLE001
                 pass
         return False
+
+    # --- diagnostics: print the real DOM of the gate so selectors can be calibrated ---
+    def _dump(self, page, tag: str) -> None:
+        try:
+            out = [f"\n===== EMAIL-GATE DOM [{tag}] {time.strftime('%H:%M:%S')} ====="]
+            for i, fr in enumerate(self._scopes(page)):
+                url = getattr(fr, "url", "?")
+                url = url() if callable(url) else url
+                try:
+                    txt = (fr.inner_text("body") or "").strip().replace("\n", " ")[:300]
+                except Exception:  # noqa: BLE001
+                    txt = "(no text)"
+                out.append(f"[frame {i}] {url}\n  text: {txt}")
+                try:
+                    for el in (fr.query_selector_all("input, textarea") or []):
+                        attrs = {a: el.get_attribute(a) for a in _DUMP_ATTRS}
+                        out.append(f"  INPUT vis={el.is_visible()} {attrs}")
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    btns = [(el.inner_text() or "").strip()[:40]
+                            for el in (fr.query_selector_all("button, [role='button'], a.button") or [])
+                            if el.is_visible()]
+                    out.append(f"  BUTTONS: {btns}")
+                except Exception:  # noqa: BLE001
+                    pass
+            out.append("===== END DOM =====\n")
+            print("\n".join(out), flush=True)
+        except Exception:  # noqa: BLE001
+            pass
