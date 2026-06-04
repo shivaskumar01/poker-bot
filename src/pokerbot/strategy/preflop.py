@@ -1,9 +1,9 @@
-"""Preflop decision: classify the situation, then apply the parameterized ranges.
+"""Preflop decision: classify the situation, then apply ranges + pot-odds defense.
 
-Situations: short-stack push/fold, open-or-fold (RFI), isolate-limpers, facing a raise
-(3bet/call/fold + a small suited bluff-3bet frequency), facing a 3bet (4bet/call/fold), and
-facing a 4bet+ (shove/call/fold). Raising is gated on actually being able to raise — facing
-an all-in for more than hero's stack, the choice is call (all-in) or fold, never "raise".
+Less exploitable by design: it DEFENDS BY PRICE (call when hand equity beats the pot odds,
+so it can't be run over by small raises), MIXES open sizing, 3-bet-bluffs a real polar range
+(suited + blocker hands), occasionally slow-plays premiums, and widens/tightens off the
+opponent read. Raising is gated on actually being able to raise (else call all-in / fold).
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from .notation import canonical, is_suited
 
 PUSH_FOLD_BB = 12.0
 LATE_POSITIONS = {"CO", "BTN", "SB", "HJ"}
+SLOWPLAY_FREQ = 0.25          # how often to flat (trap) instead of re-raising a premium vs a 3-bet
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +82,20 @@ def _context(gs: GameState) -> _Ctx:
 
 
 def _call_amount(gs: GameState) -> Decimal:
-    return min(gs.to_call, gs.hero.stack)   # calling can be all-in for less than the bet
+    return min(gs.to_call, gs.hero.stack)
+
+
+def _open_to(gs: GameState, mx: Mixer, num_limpers: int = 0) -> Decimal:
+    return sizing.open_raise_to(gs, num_limpers, mx.choose(ranges.OPEN_SIZE_WEIGHTS))
+
+
+def _is_3bet_bluff(cls: str) -> bool:
+    # polar bluffs: suited hands (playable) or ace/king-high (card-removal blockers)
+    return is_suited(cls) or cls[0] in ("A", "K")
+
+
+def _is_4bet_bluff(cls: str) -> bool:
+    return cls[0] == "A" and is_suited(cls)       # suited aces: best blockers
 
 
 def decide_preflop(gs: GameState, rng: random.Random | None = None, read=None) -> Decision:
@@ -96,20 +110,20 @@ def decide_preflop(gs: GameState, rng: random.Random | None = None, read=None) -
         return _push_fold(gs, ctx, cls, pct, hero_bb, raise_ok)
     if ctx.num_raises == 0:
         fn = _open_or_fold if ctx.num_limpers == 0 else _iso_or_fold
-        return fn(gs, ctx, cls, pct, raise_ok)
+        return fn(gs, ctx, cls, pct, raise_ok, mx)
     if ctx.num_raises == 1:
         return _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok)
     if ctx.num_raises == 2:
-        return _vs_3bet(gs, ctx, cls, pct, raise_ok)
+        return _vs_3bet(gs, ctx, cls, pct, mx, read, raise_ok)
     return _vs_4bet_plus(gs, cls, pct, raise_ok)
 
 
-def _open_or_fold(gs, ctx, cls, pct, raise_ok):
+def _open_or_fold(gs, ctx, cls, pct, raise_ok, mx):
     frac = ranges.rfi_fraction(ctx.players_left, is_sb=ctx.is_sb,
                                heads_up_match=ctx.heads_up_match, blind_vs_blind=ctx.blind_vs_blind)
     if pct <= frac:
         if raise_ok:
-            return Decision(ActionType.RAISE, sizing.open_raise_to(gs, 0),
+            return Decision(ActionType.RAISE, _open_to(gs, mx),
                             f"open {cls} ({ctx.hero_pos}, top {frac:.0%})")
         return Decision(ActionType.CALL, _call_amount(gs), f"call all-in {cls} (short)")
     if gs.to_call <= 0:
@@ -117,11 +131,11 @@ def _open_or_fold(gs, ctx, cls, pct, raise_ok):
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} (outside RFI {frac:.0%})")
 
 
-def _iso_or_fold(gs, ctx, cls, pct, raise_ok):
+def _iso_or_fold(gs, ctx, cls, pct, raise_ok, mx):
     frac = ranges.iso_fraction(ctx.players_left, ctx.num_limpers, is_sb=ctx.is_sb,
                                heads_up_match=ctx.heads_up_match, blind_vs_blind=ctx.blind_vs_blind)
     if pct <= frac and raise_ok:
-        return Decision(ActionType.RAISE, sizing.open_raise_to(gs, ctx.num_limpers),
+        return Decision(ActionType.RAISE, _open_to(gs, mx, ctx.num_limpers),
                         f"isolate {cls} over {ctx.num_limpers} limper(s)")
     if gs.to_call <= 0:
         return Decision(ActionType.CHECK, Decimal("0"), f"check {cls} in limped pot")
@@ -129,30 +143,42 @@ def _iso_or_fold(gs, ctx, cls, pct, raise_ok):
 
 
 def _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok):
-    tb, cont = ranges.vs_raise_thresholds(
+    tb, _cont = ranges.vs_raise_thresholds(
         in_position=ctx.in_position, players_left_behind=ctx.players_left,
         vs_late_open=ctx.vs_late_open, is_bb=ctx.is_bb)
-    tb, cont = exploit.adj_vs_raise(tb, cont, read)
-    if pct <= tb:
-        if raise_ok:
-            return Decision(ActionType.RAISE, sizing.threebet_to(gs, in_position=ctx.in_position),
-                            f"value 3-bet {cls}")
-        return Decision(ActionType.CALL, _call_amount(gs), f"call all-in {cls} (premium)")
-    if pct <= cont:
-        return Decision(ActionType.CALL, _call_amount(gs), f"call raise with {cls} (top {cont:.0%})")
-    bluff_freq = exploit.adj_3bet_bluff_freq(0.5, read)
-    if raise_ok and is_suited(cls) and pct <= cont * 1.5 and mx.chance(bluff_freq):
+    tb, _ = exploit.adj_vs_raise(tb, _cont, read)
+    heads_up = ctx.heads_up_match or ctx.lone_opponent
+
+    if pct <= tb and raise_ok:                                  # polarized value 3-bet
         return Decision(ActionType.RAISE, sizing.threebet_to(gs, in_position=ctx.in_position),
-                        f"bluff 3-bet {cls}", confidence=bluff_freq)
+                        f"value 3-bet {cls}")
+
+    thr = exploit.adj_defense_threshold(
+        ranges.defense_equity_threshold(gs.pot_odds, in_position=ctx.in_position,
+                                        vs_late_open=ctx.vs_late_open, heads_up=heads_up), read)
+    if ranges.hand_equity(cls) >= thr:                          # defend by price
+        return Decision(ActionType.CALL, _call_amount(gs),
+                        f"call {cls} (eq {ranges.hand_equity(cls):.2f} >= price {thr:.2f})")
+
+    if raise_ok and _is_3bet_bluff(cls) and mx.chance(exploit.adj_3bet_bluff_freq(0.30, read)):
+        return Decision(ActionType.RAISE, sizing.threebet_to(gs, in_position=ctx.in_position),
+                        f"3-bet bluff {cls}", confidence=0.3)
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} vs raise")
 
 
-def _vs_3bet(gs, ctx, cls, pct, raise_ok):
-    fourbet, cont = ranges.vs_3bet_thresholds(in_position=ctx.in_position)
+def _vs_3bet(gs, ctx, cls, pct, mx, read, raise_ok):
+    fourbet, _cont = ranges.vs_3bet_thresholds(in_position=ctx.in_position)
     if pct <= fourbet and raise_ok:
+        if mx.chance(SLOWPLAY_FREQ):                            # trap: flat the premium sometimes
+            return Decision(ActionType.CALL, _call_amount(gs), f"flat (trap) {cls} vs 3-bet")
         return Decision(ActionType.RAISE, sizing.fourbet_to(gs), f"4-bet value {cls}")
-    if pct <= cont:
-        return Decision(ActionType.CALL, _call_amount(gs), f"call 3-bet {cls}")
+
+    thr = ranges.threebet_call_equity_threshold(gs.pot_odds, in_position=ctx.in_position)
+    if ranges.hand_equity(cls) >= thr:
+        return Decision(ActionType.CALL, _call_amount(gs), f"call 3-bet {cls} (price)")
+
+    if raise_ok and _is_4bet_bluff(cls) and mx.chance(exploit.adj_3bet_bluff_freq(0.15, read)):
+        return Decision(ActionType.RAISE, sizing.fourbet_to(gs), f"4-bet bluff {cls}", confidence=0.15)
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} vs 3-bet")
 
 

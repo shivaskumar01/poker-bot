@@ -8,6 +8,8 @@ a sound TAG baseline and are meant to be adjusted; the exploit layer deviates fr
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from .notation import all_hand_classes, gap, is_pair, is_suited
 from .preflop_strength import PREFLOP_EQUITY
 
@@ -112,3 +114,27 @@ def call_allin_fraction(eff_bb: float, *, in_position: bool) -> float:
     if eff_bb <= 6:
         base *= 1.4
     return min(base, 1.0)
+
+
+# --- equity-vs-price defense (defend by pot odds, not a fixed % -> not exploitable by sizing) ---
+def hand_equity(cls: str) -> float:
+    """Heads-up all-in equity vs a random hand (proxy for equity vs a wide opening range)."""
+    return PREFLOP_EQUITY[cls]
+
+
+def defense_equity_threshold(price: float, *, in_position: bool, vs_late_open: bool,
+                             heads_up: bool) -> float:
+    """Min equity to flat-call a raise given the price; wider (lower) vs wide/late openers."""
+    penalty = 0.0 if in_position else 0.05      # realize less equity out of position
+    if not (heads_up or vs_late_open):
+        penalty += 0.08                          # tight/early opener -> their range is strong
+    return price + penalty
+
+
+def threebet_call_equity_threshold(price: float, *, in_position: bool) -> float:
+    """Min equity to flat-call a 3-bet (3-bet ranges are strong, so demand more)."""
+    return price + (0.10 if in_position else 0.16)
+
+
+# Open-raise size mix (bb multiples) so the bot isn't a fixed 2.5x every time.
+OPEN_SIZE_WEIGHTS = [(Decimal("2.0"), 1.0), (Decimal("2.5"), 2.0), (Decimal("3.0"), 1.0)]

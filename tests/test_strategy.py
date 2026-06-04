@@ -123,10 +123,18 @@ def test_fold_trash_vs_open():
 
 
 def test_4bet_kings_vs_3bet():
-    # hero (UTG seat 3) opened, CO (seat 5) 3-bet -> hero faces a 3-bet with KK
+    # hero (UTG seat 3) opened, CO (seat 5) 3-bet -> KK either 4-bets or traps (flats)
     gs = preflop_state(9, hero_seat=3, hero_cards="KsKd", button=0,
                        raises=[(3, "3.0"), (5, "9.0")])
-    assert decide(gs, rng()).action == ActionType.RAISE
+    assert decide(gs, rng()).action in (ActionType.RAISE, ActionType.CALL)
+
+
+def test_bb_defends_small_raise_but_folds_big_raise():
+    # the leak from live play: HU BB must defend a cheap raise by price, fold an expensive one
+    small = preflop_state(2, hero_seat=1, hero_cards="6h5c", button=0, raises=[(0, "2.0")])
+    big = preflop_state(2, hero_seat=1, hero_cards="6h5c", button=0, raises=[(0, "8.0")])
+    assert decide(small, rng()).action in (ActionType.CALL, ActionType.RAISE)
+    assert decide(big, rng()).action == ActionType.FOLD
 
 
 def test_short_stack_shoves_premium():
@@ -170,12 +178,8 @@ def test_call_draw_with_price():
 
 def test_bb_defends_marginal_hand_only_vs_maniac():
     from pokerbot.opponents.stats import PlayerStats, Stat
-    # marginal offsuit hand whose strength sits just outside the BB's baseline defense
-    cls = next(c for c in all_hand_classes()
-               if c.endswith("o") and 0.45 <= ranges.hand_percentile(c) <= 0.55)
-    cards = "".join(str(c) for c in representative_cards(cls))
-    # heads-up: button (seat 0) opens, hero is the BB (seat 1)
-    gs = preflop_state(2, hero_seat=1, hero_cards=cards, button=0, raises=[(0, "3.0")])
+    # 72o: too weak to defend a normal open by price, but defendable vs a maniac's wide open
+    gs = preflop_state(2, hero_seat=1, hero_cards="7d2c", button=0, raises=[(0, "3.0")])
 
     baseline = decide(gs, rng())
     maniac = PlayerStats("m", hands=200, agg_actions=200, call_actions=10)
