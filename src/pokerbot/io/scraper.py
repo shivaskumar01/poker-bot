@@ -131,10 +131,15 @@ class Scraper:
                    (self.sel.btn_fold, self.sel.btn_check, self.sel.btn_call, self.sel.btn_raise))
 
     def _to_call_text(self) -> str:
-        if self.page.query_selector(self.sel.btn_check):
-            return "0"                       # checking is free -> nothing to call
+        # PokerNow labels the call-classed button "CALL <amt>" ONLY when facing a bet; when a
+        # check is available it shows "BET <min>" (same 'call' class) next to a check button.
+        # So we read the button TEXT, not just its presence.
         call_btn = self.page.query_selector(self.sel.btn_call)
-        return call_btn.inner_text() if call_btn else "0"
+        if call_btn:
+            text = call_btn.inner_text() or ""
+            if "call" in text.lower():
+                return text          # e.g. "CALL 2.00"
+        return "0"                   # checkable, or only a min-bet shortcut -> nothing to call
 
     def read_observation(self) -> RawObservation:
         seats: list[RawSeat] = []
