@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from ..equity.montecarlo import equity
 from ..model.state import ActionType, GameState
-from . import sizing
+from . import exploit, sizing
 from .decision import Decision
 from .mixer import Mixer
 
@@ -46,16 +46,17 @@ def _bluff_frequency(eq: float, num_opponents: int) -> float:
 
 
 def decide_postflop(gs: GameState, rng: random.Random | None = None,
-                    iterations: int = 20_000) -> Decision:
+                    iterations: int = 20_000, read=None) -> Decision:
     mx = Mixer(rng)
     hero = gs.hero
     n_opp = gs.num_live_opponents
     eq = equity(list(hero.cards), list(gs.board), n_opp, iterations=iterations, rng=rng)
     frac = _texture_fraction(gs)
-    value_threshold = min(0.85, VALUE_BASE + VALUE_PER_OPP * (n_opp - 1))
+    value_threshold = exploit.adj_value_threshold(
+        min(0.85, VALUE_BASE + VALUE_PER_OPP * (n_opp - 1)), read)
 
     if gs.to_call > 0:
-        required = gs.pot_odds
+        required = exploit.adj_call_required(gs.pot_odds, read)  # call lighter vs maniacs
         if eq >= required + RAISE_MARGIN and eq >= value_threshold:
             return Decision(ActionType.RAISE, sizing.postflop_raise_to(gs, frac),
                             f"value raise eq={eq:.2f} vs price {required:.2f}", equity=eq)
@@ -69,7 +70,7 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
     if eq >= value_threshold:
         return Decision(ActionType.BET, sizing.postflop_bet_to(gs, frac),
                         f"value bet eq={eq:.2f} ({n_opp} opp)", equity=eq)
-    p = _bluff_frequency(eq, n_opp)
+    p = exploit.adj_bluff_freq(_bluff_frequency(eq, n_opp), read)  # suppress vs stations, etc.
     if mx.chance(p):
         return Decision(ActionType.BET, sizing.postflop_bet_to(gs, frac),
                         f"(semi)bluff eq={eq:.2f} p={p:.2f}", equity=eq, confidence=p)

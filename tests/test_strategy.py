@@ -164,3 +164,24 @@ def test_call_draw_with_price():
     # nut flush draw + overcards getting 4:1 -> continue (call or raise), never fold
     gs = postflop_state(2, hero_seat=0, hero_cards="AhKh", board="Qh7h2c", to_call="3", pot="9")
     assert decide(gs, rng(), iterations=4000).action in (ActionType.CALL, ActionType.RAISE)
+
+
+# ---------------- exploit integration ----------------
+
+def test_bb_defends_marginal_hand_only_vs_maniac():
+    from pokerbot.opponents.stats import PlayerStats, Stat
+    # marginal offsuit hand whose strength sits just outside the BB's baseline defense
+    cls = next(c for c in all_hand_classes()
+               if c.endswith("o") and 0.45 <= ranges.hand_percentile(c) <= 0.55)
+    cards = "".join(str(c) for c in representative_cards(cls))
+    # heads-up: button (seat 0) opens, hero is the BB (seat 1)
+    gs = preflop_state(2, hero_seat=1, hero_cards=cards, button=0, raises=[(0, "3.0")])
+
+    baseline = decide(gs, rng())
+    maniac = PlayerStats("m", hands=200, agg_actions=200, call_actions=10)
+    maniac.vpip = Stat(120, 200)
+    maniac.pfr = Stat(95, 200)
+    exploited = decide(gs, rng(), reads={0: maniac})
+
+    assert baseline.action == ActionType.FOLD                       # too weak vs a normal open
+    assert exploited.action in (ActionType.CALL, ActionType.RAISE)  # defend vs a maniac

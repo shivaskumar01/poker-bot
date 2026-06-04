@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from ..model.positions import postflop_action_order, preflop_action_order
 from ..model.state import ActionType, GameState, SeatStatus, Street
-from . import ranges, sizing
+from . import exploit, ranges, sizing
 from .decision import Decision
 from .mixer import Mixer
 from .notation import canonical, is_suited
@@ -92,7 +92,7 @@ def _context(gs: GameState) -> _Ctx:
     )
 
 
-def decide_preflop(gs: GameState, rng: random.Random | None = None) -> Decision:
+def decide_preflop(gs: GameState, rng: random.Random | None = None, read=None) -> Decision:
     mx = Mixer(rng)
     ctx = _context(gs)
     cls = canonical(*gs.hero.cards)
@@ -104,7 +104,7 @@ def decide_preflop(gs: GameState, rng: random.Random | None = None) -> Decision:
     if ctx.num_raises == 0:
         return (_open_or_fold if ctx.num_limpers == 0 else _iso_or_fold)(gs, ctx, cls, pct)
     if ctx.num_raises == 1:
-        return _vs_raise(gs, ctx, cls, pct, mx)
+        return _vs_raise(gs, ctx, cls, pct, mx, read)
     if ctx.num_raises == 2:
         return _vs_3bet(gs, ctx, cls, pct)
     return _vs_4bet_plus(gs, cls, pct)
@@ -132,19 +132,21 @@ def _iso_or_fold(gs, ctx, cls, pct):
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} vs limpers")
 
 
-def _vs_raise(gs, ctx, cls, pct, mx):
+def _vs_raise(gs, ctx, cls, pct, mx, read):
     tb, cont = ranges.vs_raise_thresholds(
         in_position=ctx.in_position, players_left_behind=ctx.players_left,
         vs_late_open=ctx.vs_late_open, is_bb=ctx.is_bb)
+    tb, cont = exploit.adj_vs_raise(tb, cont, read)  # widen vs wide openers, tighten vs nits
     open_to = _max_committed(gs)
     if pct <= tb:
         return Decision(ActionType.RAISE, sizing.threebet_to(gs, open_to, in_position=ctx.in_position),
                         f"value 3-bet {cls}")
     if pct <= cont:
         return Decision(ActionType.CALL, gs.to_call, f"call raise with {cls} (top {cont:.0%})")
-    if is_suited(cls) and pct <= cont * 1.5 and mx.chance(0.5):
+    bluff_freq = exploit.adj_3bet_bluff_freq(0.5, read)
+    if is_suited(cls) and pct <= cont * 1.5 and mx.chance(bluff_freq):
         return Decision(ActionType.RAISE, sizing.threebet_to(gs, open_to, in_position=ctx.in_position),
-                        f"bluff 3-bet {cls}", confidence=0.5)
+                        f"bluff 3-bet {cls}", confidence=bluff_freq)
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} vs raise")
 
 
