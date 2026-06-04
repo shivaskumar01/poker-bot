@@ -38,6 +38,12 @@
   .card{ display:inline-flex; align-items:center; justify-content:center; min-width:42px; height:60px;
          background:#fbfbf7; border-radius:7px; font-size:22px; font-weight:700; box-shadow:0 2px 6px rgba(0,0,0,.35); }
   .card.red{ color:#d23b3b; } .card.black{ color:#1a1a1a; }
+  .eqwrap{ margin-top:16px; transition:opacity .25s; }
+  .eqhead{ display:flex; justify-content:space-between; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .eqhead b{ color:var(--ink); font-variant-numeric:tabular-nums; }
+  .eqbar{ height:16px; background:#0d1411; border:1px solid var(--line); border-radius:999px; overflow:hidden; position:relative; }
+  .eqfill{ height:100%; width:0%; border-radius:999px; transition:width .35s ease, background .35s; }
+  .eqtick{ position:absolute; top:0; bottom:0; left:50%; width:1px; background:rgba(255,255,255,.18); }
   .decision{ margin-top:16px; border-radius:12px; padding:18px; text-align:center; background:#101a16; border:1px solid var(--line); }
   .decision .act{ font-size:30px; font-weight:800; letter-spacing:.01em; }
   .decision .why{ color:var(--muted); margin-top:6px; font-size:13px; }
@@ -97,6 +103,10 @@
       <div class="lbl">Your hand</div>
       <div class="cards" id="hole"></div>
     </div>
+    <div class="eqwrap" id="eqwrap" style="opacity:.4">
+      <div class="eqhead"><span>Equity</span><b id="eqlabel">—</b></div>
+      <div class="eqbar"><div class="eqfill" id="eqfill"></div><div class="eqtick"></div></div>
+    </div>
     <div class="decision">
       <div class="act" id="act">—</div>
       <div class="why" id="why">Start the bot and sit at your table.</div>
@@ -142,9 +152,17 @@ async function poll(){
     if(s.decision){
       const d=s.decision; const a=d.action.toLowerCase();
       const amt = (d.action==='BET'||d.action==='RAISE')? ' '+d.amount : '';
-      const eq = (d.equity!=null)? `  ·  eq ${(d.equity*100).toFixed(0)}%` : '';
       $('act').innerHTML = `<span class="a-${a}">${d.action}${amt}</span>`;
-      $('why').textContent = d.rationale + (eq?eq:'');
+      $('why').textContent = d.rationale;
+      const eqw=$('eqwrap');
+      if(d.equity!=null){
+        const pct=Math.round(d.equity*100);
+        $('eqfill').style.width=pct+'%';
+        $('eqfill').style.background = d.equity<0.40?'var(--red)':(d.equity<0.60?'var(--gold)':'var(--green)');
+        $('eqlabel').textContent=pct+'%'; eqw.style.opacity='1';
+      } else {            // preflop: no Monte-Carlo equity
+        $('eqfill').style.width='0%'; $('eqlabel').textContent='preflop'; eqw.style.opacity='.4';
+      }
     }
     $('log').textContent = (s.log&&s.log.length)? s.log.join('\n') : '—';
   }catch(e){ /* server momentarily busy */ }
