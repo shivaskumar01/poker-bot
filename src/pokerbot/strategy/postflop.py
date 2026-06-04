@@ -29,15 +29,8 @@ _STREET_DECAY = {Street.FLOP: 1.0, Street.TURN: 0.6, Street.RIVER: 0.35}
 _MADE_CALL_PENALTY = {Street.FLOP: 0.06, Street.TURN: 0.10, Street.RIVER: 0.12}
 
 
-def _texture_fraction(gs: GameState) -> Decimal:
-    board = gs.board
-    if len(board) < 3:
-        return Decimal("0.50")
-    suits = [c.suit for c in board]
-    ranks = [c.value for c in board]
-    flushy = max(suits.count(s) for s in set(suits)) >= 2
-    connected = (max(ranks) - min(ranks)) <= 4
-    return Decimal("0.66") if (flushy or connected) else Decimal("0.50")
+def _loose(read) -> bool:
+    return read is not None and read.confidence >= 0.30 and classify(read) in ("station", "lag", "maniac")
 
 
 def _in_position(gs: GameState) -> bool:
@@ -63,10 +56,21 @@ def _commit(gs: GameState, target: Decimal, eq: float, *, value: bool) -> Decima
 
 
 def _size(gs: GameState, mx: Mixer, *, value: bool, read) -> Decimal:
-    base = float(_texture_fraction(gs))
-    mult = exploit.value_size_multiplier(read) if value else exploit.bluff_size_multiplier(read)
-    jitter = 0.85 + 0.33 * mx.rng.random()
-    return Decimal(str(round(min(max(base * mult * jitter, 0.33), 1.25), 2)))
+    """Pick a CLEAN pot fraction. The group bets ~1/2 pot baseline and overbets ~11%, so we
+    skew bigger for value vs loose callers and allow river overpot jams."""
+    river = gs.street == Street.RIVER
+    loose = _loose(read)
+    if value:
+        menu = [(Decimal("0.5"), 2.5), (Decimal("0.66"), 2.0), (Decimal("0.75"), 1.5), (Decimal("1.0"), 1.2)]
+        if loose:
+            menu += [(Decimal("1.5"), 1.2), (Decimal("2.0"), 0.7)]       # overbet loose callers for value
+            if river:
+                menu += [(Decimal("2.5"), 0.5), (Decimal("3.0"), 0.4)]   # river overpot jams
+    else:  # (semi)bluff -> polarized; mirror value sizes (incl overbets vs loose) to stay balanced
+        menu = [(Decimal("0.5"), 1.5), (Decimal("0.66"), 2.0), (Decimal("0.75"), 1.5), (Decimal("1.0"), 1.0)]
+        if loose:
+            menu += [(Decimal("1.5"), 0.8), (Decimal("2.0"), 0.4)]
+    return mx.choose(menu)
 
 
 def _pure_bluff_freq(read, street: Street, in_position: bool) -> float:

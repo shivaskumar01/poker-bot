@@ -92,14 +92,23 @@ def _open_to(gs: GameState, mx: Mixer, read, num_limpers: int = 0) -> Decimal:
     if read is not None and read.confidence >= exploit.MIN_CONF:
         label = classify(read)
         if label in ("station", "lag", "maniac") or read.r("vpip") >= 0.35:
-            mult = mx.choose([(Decimal("3.0"), 3.0), (Decimal("4.0"), 1.0)])  # loose -> 3x mostly, some 4x
+            mult = mx.choose([(Decimal("4.0"), 1.5), (Decimal("5.0"), 1.5), (Decimal("6.0"), 0.8)])  # loose -> open big
         elif label == "nit":
-            mult = Decimal("2.0")
+            mult = Decimal("3.0")
         else:
-            mult = mx.choose([(Decimal("2.5"), 2.0), (Decimal("3.0"), 1.0)])
+            mult = mx.choose([(Decimal("3.0"), 2.0), (Decimal("4.0"), 1.0)])
     else:
-        mult = mx.choose([(Decimal("2.5"), 2.0), (Decimal("3.0"), 1.0)])
+        mult = mx.choose([(Decimal("3.0"), 2.0), (Decimal("4.0"), 1.0)])
     return sizing.open_raise_to(gs, num_limpers, mult)
+
+
+def _threebet_mult(read, in_position: bool) -> Decimal:
+    """3-bet/4-bet to at least 3x the bet we face; bigger vs loose callers."""
+    base = 3.0 if in_position else 4.0
+    if read is not None and read.confidence >= exploit.MIN_CONF and \
+            classify(read) in ("station", "lag", "maniac"):
+        base += 1.0
+    return Decimal(str(base))
 
 
 def _is_3bet_bluff(cls: str) -> bool:
@@ -163,7 +172,7 @@ def _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok):
     heads_up = ctx.heads_up_match or ctx.lone_opponent
 
     if pct <= tb and raise_ok:                                  # polarized value 3-bet
-        return Decision(ActionType.RAISE, sizing.threebet_to(gs, in_position=ctx.in_position),
+        return Decision(ActionType.RAISE, sizing.threebet_to(gs, multiple=_threebet_mult(read, ctx.in_position)),
                         f"value 3-bet {cls}")
 
     thr = exploit.adj_defense_threshold(
@@ -174,7 +183,7 @@ def _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok):
                         f"call {cls} (eq {ranges.hand_equity(cls):.2f} >= price {thr:.2f})")
 
     if raise_ok and _is_3bet_bluff(cls) and mx.chance(exploit.adj_3bet_bluff_freq(0.30, read)):
-        return Decision(ActionType.RAISE, sizing.threebet_to(gs, in_position=ctx.in_position),
+        return Decision(ActionType.RAISE, sizing.threebet_to(gs, multiple=_threebet_mult(read, ctx.in_position)),
                         f"3-bet bluff {cls}", confidence=0.3)
     return Decision(ActionType.FOLD, Decimal("0"), f"fold {cls} vs raise")
 

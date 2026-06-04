@@ -91,8 +91,8 @@ def main() -> None:
                         print(f"   => WOULD {d.action.name}{amt}{eq}   {d.rationale}\n")
                 except Exception as e:  # noqa: BLE001 - keep watching through transient read errors
                     print("read error:", e)
-                time.sleep(1.0)
-            time.sleep(0.4)
+                time.sleep(0.5)
+            time.sleep(0.3)
     except KeyboardInterrupt:
         print("\nstopped.")
         browser.close()

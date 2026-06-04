@@ -275,3 +275,19 @@ def test_open_size_is_a_clean_multiple_of_the_blind():
         amt = decide(preflop_state(2, hero_seat=0, hero_cards="AhKs", button=0),
                      random.Random(s)).amount
         assert amt % D("0.5") == 0, amt
+
+
+def test_3bet_is_at_least_3x_the_open():
+    # facing an open to 1.5, a value 3-bet must be >= 3x (>= 4.5), never a mini-click
+    gs = preflop_state(2, hero_seat=1, hero_cards="AhAd", button=0, raises=[(0, "1.5")])
+    d = decide(gs, rng())
+    assert d.action == ActionType.RAISE
+    assert d.amount >= D("4.5"), d.amount
+
+
+def test_postflop_bets_are_clean_pot_relative():
+    # blinds 0.5/1.0 -> postflop bets round to the big blind (no 10.81-type cents)
+    for s in range(10):
+        amt = decide(postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d",
+                                    to_call="0", pot="10"), random.Random(s), iterations=800).amount
+        assert amt % D("1") == 0, amt
