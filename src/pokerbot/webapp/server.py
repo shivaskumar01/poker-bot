@@ -26,6 +26,7 @@ from ..runtime.config import load_config
 from ..runtime.orchestrator import LiveBot
 from ..runtime.safety import Limits, SessionGuard
 from ..strategy.engine import primary_villain_read
+from ..strategy.timing import tempo_label
 
 HERE = os.path.dirname(__file__)
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))   # repo root (holds config.yaml, data/)
@@ -105,7 +106,7 @@ class BotController:
             if d["needs_rebuy"]:
                 self.state["status"] = "bot busted — confirm a re-buy to keep playing"
 
-    def _on_decision(self, gs, d, reads) -> None:
+    def _on_decision(self, gs, d, reads, think=None) -> None:
         villain = primary_villain_read(gs, reads)
         hole = [str(c) for c in gs.hero.cards]
         board = [str(c) for c in gs.board]
@@ -114,12 +115,14 @@ class BotController:
                 "opponents": gs.num_live_opponents,
                 "villain": classify(villain) if villain and villain.hands >= 15 else None}
         amt = f" {d.amount}" if d.action.name in ("BET", "RAISE") else ""
+        tempo = tempo_label(think, self.cfg.max_think) if think else ""
         line = (f"[{gs.street.name}] {' '.join(hole)} | {' '.join(board) or '-'} -> "
-                f"{d.action.name}{amt} ({d.rationale})")
+                f"{d.action.name}{amt}" + (f" ·{tempo}" if tempo else "") + f" ({d.rationale})")
         with self.lock:
             self.state["hand"] = hand
             self.state["decision"] = {"action": d.action.name, "amount": str(d.amount),
-                                      "equity": d.equity, "rationale": d.rationale}
+                                      "equity": d.equity, "rationale": d.rationale,
+                                      "think": think, "tempo": tempo}
             self.state["status"] = "running"
             self.state["session"] = {"hands": self.guard.hands, "net_bb": round(self.guard.net_bb, 1)}
             self.state["log"] = ([line] + self.state.get("log", []))[:25]

@@ -46,7 +46,10 @@
   .eqtick{ position:absolute; top:0; bottom:0; left:50%; width:1px; background:rgba(255,255,255,.18); }
   .decision{ margin-top:16px; border-radius:12px; padding:18px; text-align:center; background:#101a16; border:1px solid var(--line); }
   .decision .act{ font-size:30px; font-weight:800; letter-spacing:.01em; }
-  .decision .why{ color:var(--muted); margin-top:6px; font-size:13px; }
+  .decision .tempo{ margin-top:8px; font:11px/1 ui-monospace,Menlo,monospace; letter-spacing:.04em;
+                    color:var(--muted); min-height:13px; }
+  .decision .tempo.snap{ color:var(--blue); } .decision .tempo.tank{ color:var(--gold); }
+  .decision .why{ color:var(--muted); margin-top:8px; font-size:13px; }
   .a-fold{ color:var(--red); } .a-call,.a-check{ color:var(--blue); } .a-bet,.a-raise{ color:var(--green); }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   th,td{ text-align:right; padding:6px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
@@ -122,6 +125,7 @@
     </div>
     <div class="decision">
       <div class="act" id="act">—</div>
+      <div class="tempo" id="tempo"></div>
       <div class="why" id="why">Start the bot and sit at your table.</div>
     </div>
   </div>
@@ -171,6 +175,9 @@ async function poll(){
       const d=s.decision; const a=d.action.toLowerCase();
       const amt = (d.action==='BET'||d.action==='RAISE')? ' '+d.amount : '';
       $('act').innerHTML = `<span class="a-${a}">${d.action}${amt}</span>`;
+      const tp=$('tempo'); const lbl=d.tempo||'';
+      tp.textContent = lbl ? ('⏱ '+lbl) : '';
+      tp.className = 'tempo' + (lbl.startsWith('snap')?' snap':(lbl.startsWith('tank')?' tank':''));
       $('why').textContent = d.rationale;
       const eqw=$('eqwrap');
       if(d.equity!=null){

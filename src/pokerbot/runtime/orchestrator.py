@@ -9,10 +9,12 @@ import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from ..io.prompts import fill_email_if_prompted
 from ..io.scraper import reconstruct_preflop, to_game_state
 from ..model.state import Action, ActionType, Street
 from ..opponents.classify import classify
 from ..strategy.engine import decide, primary_villain_read
+from ..strategy.timing import tempo_label, think_seconds
 
 
 class LiveBot:
@@ -68,6 +70,24 @@ class LiveBot:
                 })
         except Exception as e:  # noqa: BLE001 - upkeep must never crash the loop
             print("table-check error:", e)
+        page = getattr(self.scraper, "page", None)   # PokerNow email-auth gate (if it pops up)
+        if page is not None:
+            try:
+                if fill_email_if_prompted(page, self.scraper.sel, self.rng):
+                    print("filled the email-authentication prompt")
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _sleep(self, secs: float) -> None:
+        """Sleep in small steps so a Stop request is honored promptly even mid-'tank'."""
+        end = time.time() + max(0.0, float(secs))
+        while True:
+            remaining = end - time.time()
+            if remaining <= 0:
+                return
+            if self.stop_event is not None and self.stop_event.is_set():
+                return
+            time.sleep(min(0.2, remaining))
 
     # --- helpers ---
     def _reads(self, gs):
@@ -96,10 +116,11 @@ class LiveBot:
     def step(self):
         """One decision cycle (assumes it's hero's turn). Acts only if execute+consent."""
         gs, d, reads = self.decide_for(self.scraper.read_observation())
+        secs = think_seconds(d, gs, self.rng, lo=self.config.min_think, hi=self.config.max_think)
         self._log(gs, d)
         acted = False
         if self.executor.can_act:
-            self.guard.think()
+            self._sleep(secs)
             acted = self.executor.execute(d)
         return gs, d, acted
 
@@ -136,29 +157,33 @@ class LiveBot:
                                 self.guard.count_hand()
                         reads = self._reads(gs)
                         d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
-                        self._announce(gs, d, reads)
+                        secs = think_seconds(d, gs, self.rng,
+                                             lo=self.config.min_think, hi=self.config.max_think)
+                        self._announce(gs, d, reads, secs)
                         self._log(gs, d)
                         if self.on_decision is not None:
-                            self.on_decision(gs, d, reads)
+                            self.on_decision(gs, d, reads, secs)
                         if self.executor.can_act and not self._needs_rebuy:
-                            self.guard.think()
+                            self._sleep(secs)            # human-paced + timing-tell balanced
                             self.executor.execute(d)
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors
                 print("loop error:", e)
             time.sleep(0.2)
 
     # --- output ---
-    def _announce(self, gs, d, reads) -> None:
+    def _announce(self, gs, d, reads, secs=None) -> None:
         villain = primary_villain_read(gs, reads)
         vtag = f"  vs {classify(villain)}" if villain and villain.hands >= 15 else ""
         hole = " ".join(map(str, gs.hero.cards)) or "??"
         board = " ".join(map(str, gs.board)) or "-"
         amt = f" {d.amount}" if d.action.name in ("BET", "RAISE") else ""
         eq = f" eq={d.equity:.2f}" if d.equity is not None else ""
+        tempo = tempo_label(secs, self.config.max_think)
+        tempo = f"  [{tempo}]" if (tempo and self.executor.can_act) else ""
         verb = "WOULD" if not self.executor.can_act else ">>"
         print(f"[{gs.street.name}] {hole} | board {board} | pos {gs.hero_position} | "
               f"{gs.num_live_opponents} opp | pot {gs.pot} to-call {gs.to_call}{vtag}")
-        print(f"   {verb} {d.action.name}{amt}{eq}   {d.rationale}\n")
+        print(f"   {verb} {d.action.name}{amt}{eq}{tempo}   {d.rationale}\n")
 
     def _log(self, gs, d) -> None:
         if not self.logfile:
