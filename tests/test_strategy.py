@@ -1,0 +1,166 @@
+import random
+from decimal import Decimal
+
+from pokerbot.model.cards import parse_cards
+from pokerbot.model.positions import assign_positions
+from pokerbot.model.state import (
+    Action,
+    ActionType,
+    GameState,
+    Seat,
+    SeatStatus,
+    Street,
+    TableConfig,
+)
+from pokerbot.strategy import ranges
+from pokerbot.strategy.engine import decide
+from pokerbot.strategy.notation import all_hand_classes, representative_cards
+
+D = Decimal
+
+
+def rng():
+    return random.Random(7)
+
+
+def preflop_state(n, hero_seat, hero_cards, button=0, *, raises=(), limpers=(),
+                  hero_stack="100", bb="1.0", sb="0.5"):
+    bbv, sbv = D(bb), D(sb)
+    order = list(range(n))
+    pos = assign_positions(order, button)
+    committed = {s: D("0") for s in order}
+    sb_seat = next((s for s, p in pos.items() if p == "SB"), None)
+    bb_seat = next(s for s, p in pos.items() if p == "BB")
+    if sb_seat is not None:
+        committed[sb_seat] = sbv
+    committed[bb_seat] = bbv
+    for s in limpers:
+        committed[s] = bbv
+    actions = []
+    for s, amt in raises:
+        committed[s] = D(amt)
+        actions.append(Action(s, ActionType.RAISE, D(amt), Street.PREFLOP))
+    maxc = max(committed.values())
+    seats = tuple(
+        Seat(seat_id=s, name=f"p{s}",
+             stack=D(hero_stack) if s == hero_seat else D("100"),
+             committed=committed[s], total_committed=committed[s],
+             status=SeatStatus.ACTIVE,
+             cards=tuple(parse_cards(hero_cards)) if s == hero_seat else (),
+             is_button=(s == button), is_hero=(s == hero_seat))
+        for s in order
+    )
+    return GameState(
+        config=TableConfig(small_blind=sbv, big_blind=bbv, max_seats=n),
+        seats=seats, board=(), street=Street.PREFLOP, button_seat_id=button,
+        hero_seat_id=hero_seat, pot=sum(committed.values()),
+        to_call=maxc - committed[hero_seat], min_raise=bbv, actions=tuple(actions),
+    )
+
+
+def postflop_state(n, hero_seat, hero_cards, board, button=0, *, to_call="0",
+                   pot="10", hero_stack="100", live=None):
+    order = list(range(n))
+    live = set(order) if live is None else set(live)
+    seats = tuple(
+        Seat(seat_id=s, name=f"p{s}",
+             stack=D(hero_stack) if s == hero_seat else D("100"),
+             committed=D("0"), total_committed=D("0"),
+             status=SeatStatus.ACTIVE if s in live else SeatStatus.FOLDED,
+             cards=tuple(parse_cards(hero_cards)) if s == hero_seat else (),
+             is_button=(s == button), is_hero=(s == hero_seat))
+        for s in order
+    )
+    return GameState(
+        config=TableConfig(small_blind=D("0.5"), big_blind=D("1"), max_seats=n),
+        seats=seats, board=tuple(parse_cards(board)), street=Street.FLOP,
+        button_seat_id=button, hero_seat_id=hero_seat, pot=D(pot),
+        to_call=D(to_call), min_raise=D("1"), actions=(),
+    )
+
+
+# ---------------- preflop ----------------
+
+def test_open_premium_utg():
+    gs = preflop_state(9, hero_seat=3, hero_cards="AhAs", button=0)  # seat 3 = UTG
+    assert decide(gs, rng()).action == ActionType.RAISE
+
+
+def test_fold_trash_utg():
+    gs = preflop_state(9, hero_seat=3, hero_cards="7d2c", button=0)
+    assert decide(gs, rng()).action == ActionType.FOLD
+
+
+def test_rfi_widens_with_position():
+    btn = ranges.rfi_fraction(2, is_sb=False, heads_up_match=False, blind_vs_blind=False)
+    utg = ranges.rfi_fraction(8, is_sb=False, heads_up_match=False, blind_vs_blind=False)
+    hu = ranges.rfi_fraction(1, is_sb=False, heads_up_match=True, blind_vs_blind=False)
+    assert hu > btn > utg
+
+
+def test_same_hand_opens_button_folds_utg():
+    # pick a hand whose strength sits strictly between the UTG and BTN open fractions
+    utg_f = ranges.rfi_fraction(8, is_sb=False, heads_up_match=False, blind_vs_blind=False)
+    btn_f = ranges.rfi_fraction(2, is_sb=False, heads_up_match=False, blind_vs_blind=False)
+    cls = next(c for c in all_hand_classes() if utg_f < ranges.hand_percentile(c) <= btn_f)
+    cards = "".join(str(c) for c in representative_cards(cls))
+    utg = decide(preflop_state(9, hero_seat=3, hero_cards=cards, button=0), rng())
+    btn = decide(preflop_state(9, hero_seat=0, hero_cards=cards, button=0), rng())
+    assert utg.action == ActionType.FOLD
+    assert btn.action == ActionType.RAISE
+
+
+def test_3bet_aces_vs_open():
+    gs = preflop_state(9, hero_seat=8, hero_cards="AhAs", button=0, raises=[(3, "3.0")])
+    d = decide(gs, rng())
+    assert d.action == ActionType.RAISE
+    assert d.amount > D("3.0")  # a real 3-bet, larger than the open
+
+
+def test_fold_trash_vs_open():
+    gs = preflop_state(9, hero_seat=8, hero_cards="7d2c", button=0, raises=[(3, "3.0")])
+    assert decide(gs, rng()).action == ActionType.FOLD
+
+
+def test_4bet_kings_vs_3bet():
+    # hero (UTG seat 3) opened, CO (seat 5) 3-bet -> hero faces a 3-bet with KK
+    gs = preflop_state(9, hero_seat=3, hero_cards="KsKd", button=0,
+                       raises=[(3, "3.0"), (5, "9.0")])
+    assert decide(gs, rng()).action == ActionType.RAISE
+
+
+def test_short_stack_shoves_premium():
+    gs = preflop_state(9, hero_seat=3, hero_cards="AhAs", button=0, hero_stack="8")
+    d = decide(gs, rng())
+    assert d.action == ActionType.RAISE
+    assert d.amount == D("8.00")  # all-in (stack + 0 committed)
+
+
+def test_short_stack_folds_trash():
+    gs = preflop_state(9, hero_seat=3, hero_cards="7d2c", button=0, hero_stack="8")
+    assert decide(gs, rng()).action == ActionType.FOLD
+
+
+# ---------------- postflop ----------------
+
+def test_value_bet_set_when_checked():
+    gs = postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d", to_call="0", pot="6")
+    assert decide(gs, rng(), iterations=3000).action == ActionType.BET
+
+
+def test_fold_air_vs_big_bet():
+    gs = postflop_state(2, hero_seat=0, hero_cards="7c2d", board="AsKhQd", to_call="8", pot="8")
+    assert decide(gs, rng(), iterations=3000).action == ActionType.FOLD
+
+
+def test_no_bluff_into_a_crowd():
+    # air, checked to hero, three live opponents -> never bluff
+    gs = postflop_state(5, hero_seat=0, hero_cards="7c2d", board="AsKhQd",
+                        to_call="0", pot="10", live={0, 1, 2, 3})
+    assert decide(gs, rng(), iterations=3000).action == ActionType.CHECK
+
+
+def test_call_draw_with_price():
+    # nut flush draw + overcards getting 4:1 -> continue (call or raise), never fold
+    gs = postflop_state(2, hero_seat=0, hero_cards="AhKh", board="Qh7h2c", to_call="3", pot="9")
+    assert decide(gs, rng(), iterations=4000).action in (ActionType.CALL, ActionType.RAISE)

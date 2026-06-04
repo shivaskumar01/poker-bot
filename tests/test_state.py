@@ -58,14 +58,15 @@ def test_positions_full_table():
     assert gs.hero_position == "UTG"
 
 
-def test_folded_seat_drops_out_of_positions():
+def test_folded_seat_keeps_position_but_not_live():
     gs = _six_handed()
     seats = tuple(
         replace(s, status=SeatStatus.FOLDED) if s.seat_id == 4 else s for s in gs.seats
     )
     gs2 = replace(gs, seats=seats)
-    assert gs2.num_live_opponents == 4
-    assert set(gs2.positions) == {0, 1, 2, 3, 5}  # seat 4 folded -> excluded
+    assert gs2.num_live_opponents == 4                  # one fewer live opponent
+    assert set(gs2.positions) == {0, 1, 2, 3, 4, 5}     # position fixed at deal — seat 4 still MP
+    assert gs2.positions[4] == "MP"
 
 
 def test_pot_odds_and_spr():

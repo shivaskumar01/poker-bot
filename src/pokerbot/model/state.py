@@ -47,6 +47,9 @@ class ActionType(Enum):
 
 # A seat is "in the hand" (still contesting the pot) when ACTIVE or ALL_IN.
 IN_HAND = frozenset({SeatStatus.ACTIVE, SeatStatus.ALL_IN})
+# A seat was "dealt in" (and so holds a fixed position for the hand) when not folded yet
+# AND not sitting out — i.e. it received cards. Folding does NOT change your position.
+DEALT = frozenset({SeatStatus.ACTIVE, SeatStatus.ALL_IN, SeatStatus.FOLDED})
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,14 +133,19 @@ class GameState:
 
     # --- position / strategy context ---
     @property
-    def seats_clockwise_in_hand(self) -> list[int]:
-        """In-hand seat ids in clockwise order (ascending seat index)."""
-        return sorted(s.seat_id for s in self.in_hand_seats)
+    def dealt_seats(self) -> list[Seat]:
+        """Seats dealt into this hand (live or folded) — position is fixed at deal time."""
+        return [s for s in self.seats if s.status in DEALT]
+
+    @property
+    def seats_clockwise_dealt(self) -> list[int]:
+        """Dealt seat ids in clockwise order (ascending seat index)."""
+        return sorted(s.seat_id for s in self.dealt_seats)
 
     @property
     def positions(self) -> dict[int, str]:
-        """Map in-hand seat id -> position label; empty if fewer than 2 are in the hand."""
-        order = self.seats_clockwise_in_hand
+        """Map dealt seat id -> position label; stays fixed for the hand even after folds."""
+        order = self.seats_clockwise_dealt
         if len(order) < 2 or self.button_seat_id not in order:
             return {}
         return assign_positions(order, self.button_seat_id)
