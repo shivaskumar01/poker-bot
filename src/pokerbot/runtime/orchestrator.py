@@ -9,7 +9,7 @@ import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from ..io.prompts import fill_email_if_prompted
+from ..io.prompts import resolve_email_login
 from ..io.scraper import reconstruct_preflop, to_game_state
 from ..model.state import Action, ActionType, Street
 from ..opponents.classify import classify
@@ -70,11 +70,13 @@ class LiveBot:
                 })
         except Exception as e:  # noqa: BLE001 - upkeep must never crash the loop
             print("table-check error:", e)
-        page = getattr(self.scraper, "page", None)   # PokerNow email-auth gate (if it pops up)
+        page = getattr(self.scraper, "page", None)   # PokerNow email-login gate (if it pops up mid-session)
         if page is not None:
             try:
-                if fill_email_if_prompted(page, self.scraper.sel, self.rng):
-                    print("filled the email-authentication prompt")
+                resolve_email_login(page, self.scraper.sel, self.rng, sleep=self._sleep,
+                                    log=lambda m: print("email-login:", m),
+                                    should_stop=lambda: self.stop_event is not None
+                                    and self.stop_event.is_set())
             except Exception:  # noqa: BLE001
                 pass
 

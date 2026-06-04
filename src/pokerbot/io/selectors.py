@@ -24,9 +24,13 @@ class Selectors:
     empty_seat: str = ".table-player.table-player-seat"
     name_input: str = (".you-name-ctn input, [class*='name'] input[type='text'], "
                        "input[name*='name' i], input[placeholder*='name' i]")
-    # PokerNow sometimes gates the table behind an email 'authentication' form (video/voice chat)
+    # PokerNow sometimes gates the table behind an email 'authentication' form (video/voice chat),
+    # then asks for a 6-digit code it emails you (code_input may be one box or 6 single-char boxes).
     email_input: str = ("input[type='email'], [class*='email'] input, "
                         "input[name*='email' i], input[placeholder*='email' i]")
+    code_input: str = ("input[autocomplete='one-time-code'], input[name*='code' i], "
+                       "input[placeholder*='code' i], [class*='verif'] input, [class*='code'] input, "
+                       "input[maxlength='6'], input[maxlength='1']")
     buyin_input: str = ("[class*='buyin'] input, [class*='buy-in'] input, [class*='add-chips'] input, "
                         "[class*='stack'] input, .modal input[type='number'], "
                         "input[type='number'], input[type='range']")

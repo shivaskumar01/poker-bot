@@ -140,7 +140,9 @@ class BotController:
             if cfg.hero_name and cfg.buy_in > 0:        # auto-seat: random open seat + buy-in
                 self._set(status=f"taking an open seat as “{cfg.hero_name}” "
                                  f"(buy-in {cfg.buy_in})…")
-                seater = Seater(page, sel, cfg.hero_name, cfg.buy_in, random.Random())
+                seater = Seater(page, sel, cfg.hero_name, cfg.buy_in, random.Random(),
+                                log=lambda m: self._set(status=m),
+                                should_stop=lambda: bool(self.stop_event and self.stop_event.is_set()))
                 ok = seater.take_seat()
                 self._set(status="seated — watching for your turn" if ok else
                           "couldn't auto-seat — sit manually. " + (seater.last_diag or ""))

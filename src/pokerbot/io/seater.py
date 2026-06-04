@@ -11,21 +11,28 @@ from __future__ import annotations
 import re
 import time
 
-from .prompts import fill_email_if_prompted
+from .prompts import resolve_email_login
 
 _CONFIRM_RE = re.compile(r"sit|join|i'?m in|buy[\s-]?in|confirm|take a? seat|^\s*ok\s*$|^\s*go\s*$", re.I)
 _SUBMIT_NAME_RE = re.compile(r"^\s*(enter|continue|ok|join|next|submit|done|play)\s*$", re.I)
 
 
 class Seater:
-    def __init__(self, page, sel, name: str, buy_in, rng, sleep=time.sleep) -> None:
+    def __init__(self, page, sel, name: str, buy_in, rng, sleep=time.sleep,
+                 log=lambda m: None, should_stop=lambda: False) -> None:
         self.page = page
         self.sel = sel
         self.name = (name or "").strip()
         self.buy_in = buy_in
         self.rng = rng
         self._sleep = sleep
+        self.log = log
+        self.should_stop = should_stop
         self.last_diag = ""
+
+    def _email(self) -> None:
+        resolve_email_login(self.page, self.sel, self.rng, log=self.log,
+                            sleep=self._sleep, should_stop=self.should_stop)
 
     # --- tiny DOM helpers (kept small so a fake page can drive them in tests) ---
     def _visible(self, selector: str):
@@ -101,10 +108,11 @@ class Seater:
 
     def take_seat(self, timeout: float = 25.0) -> bool:
         """Returns True once the bot occupies a seat. Idempotent: if already seated, returns at once."""
+        self._email()                                # finish any email-login gate up front
         deadline = time.time() + timeout
-        # 1) clear any email-auth gate + name prompt; wait for an open seat to render
+        # 1) clear any late email gate + name prompt; wait for an open seat to render
         while time.time() < deadline:
-            fill_email_if_prompted(self.page, self.sel, self.rng, self._sleep)
+            self._email()
             self._set_name()
             if self.already_seated():
                 return True
@@ -127,7 +135,7 @@ class Seater:
         # 3) buy in + confirm; retry a few times while the dialog settles
         for _ in range(5):
             self._pause(0.6, 1.5)
-            fill_email_if_prompted(self.page, self.sel, self.rng, self._sleep)
+            self._email()
             self._set_name()          # some tables ask for the name inside the buy-in dialog
             self._fill_buyin()
             self._click_text(_CONFIRM_RE)
