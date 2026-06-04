@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.db
+data/*.sqlite
+data/*.jsonl
+*.log
+.DS_Store
+playwright-profile/

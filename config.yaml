@@ -1,0 +1,34 @@
+# PokerNow bot configuration.
+# Execution (clicking actions) is REFUSED unless players_consent is true.
+mode: observe              # observe | execute  (observe = read + decide + log, never click)
+players_consent: false     # MUST be true to allow execute mode (consenting home game)
+
+table:
+  url: ""                  # full PokerNow table URL
+  site: club               # club  -> www.pokernow.club  |  network -> network.pokernow.com
+
+stakes:
+  small_blind: "0.50"      # strings -> parsed to Decimal (never float for money)
+  big_blind: "1.00"
+  ante: "0"
+  currency: chips
+
+limits:
+  stop_loss_bb: 200        # stop the session after losing this many big blinds
+  stop_win_bb: 400         # stop after winning this many
+  max_hands: 500           # hard cap on hands per session
+
+engine:
+  mc_iterations: 20000     # baseline Monte-Carlo equity rollouts per decision
+  mc_iterations_big_pot: 60000
+
+timing:                    # server-courtesy / realistic pacing for a DISCLOSED bot (not stealth)
+  min_think_seconds: 1.5
+  max_think_seconds: 6.0
+
+opponents:
+  db_path: data/opponents.sqlite
+  min_samples_for_exploit: 25   # below this, shrink toward population baseline
+
+logging:
+  hand_log_path: data/hands.jsonl
