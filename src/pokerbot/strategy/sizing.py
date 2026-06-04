@@ -1,8 +1,8 @@
-"""Bet/raise sizing. Returns Decimal "raise-to" totals, clamped to legal bounds.
+"""Bet/raise sizing — returns Decimal "raise-to" totals, legalized to stack & min-raise.
 
-PokerNow takes a raise-TO amount, so every function returns the total a player would type
-into the raise box (not the increment). All results are legalized against the table's
-minimum raise and the hero's stack (an over-the-top target becomes an all-in).
+Sizes are computed off the amount-to-call (which we can always read) rather than per-seat
+bet chips (which the live scraper can't yet read), and every result is clamped to [min legal
+raise-to, hero all-in]. PokerNow takes a raise-TO amount.
 """
 from __future__ import annotations
 
@@ -17,56 +17,52 @@ def _q(x: Decimal) -> Decimal:
     return x.quantize(CENT, rounding=ROUND_DOWN)
 
 
-def _max_committed(gs: GameState) -> Decimal:
-    return max((s.committed for s in gs.in_hand_seats), default=Decimal("0"))
+def _call_level(gs: GameState) -> Decimal:
+    """Total chips hero must have in to match the current bet (= what calling makes it)."""
+    return gs.hero.committed + gs.to_call
+
+
+def all_in_to(gs: GameState) -> Decimal:
+    return _q(gs.hero.committed + gs.hero.stack)
+
+
+def can_raise(gs: GameState) -> bool:
+    """Hero can raise only if they have chips beyond the call (else it's call-all-in or fold)."""
+    return gs.hero.stack > gs.to_call
 
 
 def legalize_raise_to(gs: GameState, target: Decimal) -> Decimal:
     """Clamp a desired raise-to into [min legal raise-to, all-in]."""
-    hero = gs.hero
-    allin_to = hero.committed + hero.stack
-    min_to = _max_committed(gs) + gs.min_raise
-    if min_to >= allin_to:        # can't make a full min-raise -> only shove is legal
-        return _q(allin_to)
-    if target < min_to:
-        target = min_to
-    if target >= allin_to:
-        return _q(allin_to)
-    return _q(target)
+    allin = gs.hero.committed + gs.hero.stack
+    min_to = _call_level(gs) + gs.min_raise
+    if min_to >= allin:                      # can't make a full min-raise -> only shove is legal
+        return _q(allin)
+    return _q(min(max(target, min_to), allin))
 
 
-def open_raise_to(gs: GameState, num_limpers: int = 0, bb_multiple: Decimal = Decimal("2.5")) -> Decimal:
+def open_raise_to(gs: GameState, num_limpers: int = 0,
+                  bb_multiple: Decimal = Decimal("2.5")) -> Decimal:
     bb = gs.config.big_blind
-    target = bb * bb_multiple + bb * num_limpers
-    return legalize_raise_to(gs, target)
+    return legalize_raise_to(gs, bb * bb_multiple + bb * num_limpers)
 
 
-def threebet_to(gs: GameState, open_to: Decimal, *, in_position: bool) -> Decimal:
+def threebet_to(gs: GameState, *, in_position: bool) -> Decimal:
+    """3-bet to ~3x (IP) / ~4x (OOP) the raise we face."""
     mult = Decimal("3") if in_position else Decimal("4")
-    return legalize_raise_to(gs, open_to * mult)
+    return legalize_raise_to(gs, _call_level(gs) * mult)
 
 
-def fourbet_to(gs: GameState, threebet_amount: Decimal) -> Decimal:
-    return legalize_raise_to(gs, threebet_amount * Decimal("2.2"))
-
-
-def allin_to(gs: GameState) -> Decimal:
-    hero = gs.hero
-    return _q(hero.committed + hero.stack)
+def fourbet_to(gs: GameState) -> Decimal:
+    return legalize_raise_to(gs, _call_level(gs) * Decimal("2.2"))
 
 
 def postflop_bet_to(gs: GameState, pot_fraction: Decimal) -> Decimal:
-    """Bet (to_call == 0): bet `pot_fraction` of the pot. Returns the raise-to total."""
-    bet = gs.pot * pot_fraction
-    target = gs.hero.committed + bet
-    bb = gs.config.big_blind
-    if bet < bb:                  # never bet below a big blind
-        target = gs.hero.committed + bb
-    return legalize_raise_to(gs, target)
+    """Bet (to_call == 0): bet `pot_fraction` of the pot, never below a big blind."""
+    bet = max(gs.pot * pot_fraction, gs.config.big_blind)
+    return legalize_raise_to(gs, gs.hero.committed + bet)
 
 
 def postflop_raise_to(gs: GameState, pot_fraction: Decimal) -> Decimal:
-    """Raise facing a bet: raise to roughly `pot_fraction` of the post-call pot above the bet."""
+    """Raise facing a bet: call, then add `pot_fraction` of the resulting pot."""
     raise_size = (gs.pot + gs.to_call) * pot_fraction
-    target = _max_committed(gs) + raise_size
-    return legalize_raise_to(gs, target)
+    return legalize_raise_to(gs, _call_level(gs) + raise_size)

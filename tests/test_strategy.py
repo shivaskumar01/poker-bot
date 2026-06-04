@@ -185,3 +185,32 @@ def test_bb_defends_marginal_hand_only_vs_maniac():
 
     assert baseline.action == ActionType.FOLD                       # too weak vs a normal open
     assert exploited.action in (ActionType.CALL, ActionType.RAISE)  # defend vs a maniac
+
+
+# ---------------- stack-awareness / legal raises ----------------
+
+def test_facing_allin_for_more_than_stack_calls_not_raises():
+    # hero has a strong hand but only 1.63 left, facing a 4.13 all-in -> CALL (capped), never RAISE
+    gs = postflop_state(2, hero_seat=0, hero_cards="KcAh", board="Js7s6cKhTd",
+                        to_call="4.13", pot="39.60", hero_stack="1.63")
+    d = decide(gs, rng(), iterations=3000)
+    assert d.action == ActionType.CALL
+    assert d.amount == D("1.63")          # capped to remaining stack, not a bogus raise
+
+
+def test_low_spr_value_hand_commits_all_in():
+    # shallow stack vs a big pot (SPR 0.5): a monster checked-to just gets it in
+    gs = postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d",
+                        to_call="0", pot="40", hero_stack="20")
+    d = decide(gs, rng(), iterations=3000)
+    assert d.action == ActionType.BET
+    assert d.amount == D("20.00")         # commit rather than bet an awkward fraction
+
+
+def test_raise_size_is_legal_facing_a_bet():
+    # a value raise must be > the amount to call (the "raise 1.63 vs 4.13 call" bug)
+    gs = postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d",
+                        to_call="4", pot="12", hero_stack="100")
+    d = decide(gs, rng(), iterations=3000)
+    if d.action == ActionType.RAISE:
+        assert d.amount > D("4")          # raising-to must exceed the call
