@@ -89,8 +89,15 @@ def test_take_seat_clicks_sit_then_requests_with_buyin():
     s = _seater(page)
     assert s.take_seat(timeout=5) is True
     assert page.sit_clicked and page.requested
-    assert page.buyin == "200"             # 200.00 -> '200' typed into the Intended Stack box
+    assert page.buyin == "20000"           # cents field: 200.00 must be typed as '20000'
     assert page.seated
+
+
+def test_buyin_is_typed_as_cents():
+    page = _Page(Selectors())
+    for amount, typed in [("200.00", "20000"), ("200", "20000"), ("200.50", "20050"),
+                          ("1.00", "100"), ("55.25", "5525")]:
+        assert _seater(page, buy_in=D(amount))._buyin_text() == typed
 
 
 def test_already_seated_is_idempotent():

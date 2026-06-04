@@ -122,12 +122,12 @@ class Seater:
         return any(rx.search((el.inner_text() or "").strip()) for el in self._buttons())
 
     def _buyin_text(self) -> str:
-        """A whole-number buy-in types as '200' (not '200.00'); keep cents only when non-zero."""
-        amt = self.buy_in
+        """PokerNow's stack box treats the LAST TWO typed digits as decimals (typing '200' lands as
+        2.00), so a 200.00 buy-in must be typed as '20000'. Return the integer-cents digit string."""
         try:
-            return str(int(amt)) if amt == amt.to_integral_value() else f"{amt:.2f}"
+            return str(int((self.buy_in * 100).to_integral_value()))
         except Exception:  # noqa: BLE001
-            return str(amt)
+            return str(self.buy_in)
 
     def _fill_buyin(self) -> bool:
         text = self._buyin_text()
