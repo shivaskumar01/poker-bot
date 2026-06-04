@@ -285,6 +285,12 @@ def test_3bet_is_at_least_3x_the_open():
     assert d.amount >= D("4.5"), d.amount
 
 
+def test_board_straight_is_not_value_bet():
+    # 5-6-7-8-9 on the board; hero's Q is dead -> CHECK, don't "value bet" a likely chop
+    gs = postflop_state(2, hero_seat=0, hero_cards="Qs5s", board="9s6h8c5h7s", to_call="0", pot="21")
+    assert decide(gs, rng(), iterations=2000).action == ActionType.CHECK
+
+
 def test_postflop_bets_are_clean_pot_relative():
     # blinds 0.5/1.0 -> postflop bets round to the big blind (no 10.81-type cents)
     for s in range(10):

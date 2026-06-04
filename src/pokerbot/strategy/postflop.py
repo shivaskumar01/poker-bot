@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from ..equity.handinfo import classify_hand
 from ..equity.montecarlo import equity
-from ..model.state import ActionType, GameState, Street
+from ..model.state import ActionType, GameState, SeatStatus, Street
 from ..opponents.classify import classify
 from . import exploit, sizing
 from .decision import Decision
@@ -31,6 +31,12 @@ _MADE_CALL_PENALTY = {Street.FLOP: 0.06, Street.TURN: 0.10, Street.RIVER: 0.12}
 
 def _loose(read) -> bool:
     return read is not None and read.confidence >= 0.30 and classify(read) in ("station", "lag", "maniac")
+
+
+def _facing_all_in(gs: GameState) -> bool:
+    """Facing a bet where every live opponent is already all-in -> can only call or fold."""
+    opps = gs.live_opponents
+    return gs.to_call > 0 and bool(opps) and all(o.status is SeatStatus.ALL_IN for o in opps)
 
 
 def _in_position(gs: GameState) -> bool:
@@ -100,16 +106,20 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
     street = gs.street
     river = street == Street.RIVER
     ip = _in_position(gs)
-    raise_ok = sizing.can_raise(gs)
+    raise_ok = sizing.can_raise(gs) and not _facing_all_in(gs)   # can't raise an all-in
     value_threshold = exploit.adj_value_threshold(min(0.85, VALUE_EQ + 0.04 * (n_opp - 1)), read)
-    is_value = info.strong or eq >= value_threshold
+    # a "strong" category still needs real equity to value-bet (don't bet the board straight,
+    # counterfeited two pair, etc. that the calling range crushes)
+    is_value = (info.strong and eq >= 0.50) or eq >= value_threshold
+    # only RAISE for value with a genuinely strong hand (two pair+), not top pair
+    strong_for_raise = info.category not in ("High Card", "Pair") or eq >= 0.80
     air = not info.made and not info.draw
 
     if gs.to_call > 0:                                  # ---- facing a bet ----
         required = exploit.adj_call_required(gs.pot_odds, read)
         call_amt = min(gs.to_call, hero.stack)
-        if raise_ok and is_value and eq >= RAISE_EQ:
-            if info.strong and mx.chance(0.25):         # mix a trap with the nuts-ish
+        if raise_ok and strong_for_raise and eq >= RAISE_EQ:
+            if mx.chance(0.25):                         # mix a trap with the nuts-ish
                 return Decision(ActionType.CALL, call_amt, f"trap call {info.category} eq={eq:.2f}", equity=eq)
             return Decision(ActionType.RAISE,
                             _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=True, read=read)), eq, value=True),

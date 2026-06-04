@@ -15,7 +15,9 @@ from pokerbot.opponents.classify import classify        # noqa: E402
 from pokerbot.opponents.store import StatsStore          # noqa: E402
 from pokerbot.opponents.tracking import accumulate       # noqa: E402
 
-DEFAULT = os.path.expanduser("~/Desktop/Poker learning logs")
+# Real friend-group games only. The "Poker test" logs are bot-vs-self (the seat labeled
+# "vik" there is the user's own account), so they'd corrupt the real opponents' profiles.
+DEFAULT_FOLDERS = [os.path.expanduser("~/Desktop/Poker learning logs")]
 
 
 def cell(stat) -> str:
@@ -24,8 +26,10 @@ def cell(stat) -> str:
 
 
 def main() -> None:
-    folder = sys.argv[1] if len(sys.argv) > 1 else DEFAULT
-    files = sorted(glob.glob(os.path.join(folder, "*.csv")))
+    if len(sys.argv) > 1:
+        files = sorted(glob.glob(os.path.join(sys.argv[1], "*.csv")))
+    else:
+        files = sorted(f for d in DEFAULT_FOLDERS for f in glob.glob(os.path.join(d, "*.csv")))
     if not files:
         print(f"no CSV logs in {folder!r}")
         return

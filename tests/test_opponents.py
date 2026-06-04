@@ -64,3 +64,15 @@ def test_exploit_adjustments_are_directional():
     # no read (or too few hands) -> baseline unchanged
     assert exploit.adj_value_threshold(0.55, None) == 0.55
     assert exploit.adj_call_required(0.50, PlayerStats("x", hands=3)) == 0.50
+
+
+def test_call_required_is_person_driven():
+    # bluff-catch by PERSON: call lighter vs aggressive bluffers, tighter vs passive value-bettors
+    station = make("s", 200, 0.45, 0.05, 5, 60)
+    nit = make("n", 200, 0.10, 0.08, 10, 5)
+    lag = make("l", 200, 0.33, 0.26, 120, 40)
+    maniac = make("m", 200, 0.55, 0.45, 200, 10)
+    base = 0.50
+    assert exploit.adj_call_required(base, maniac) < exploit.adj_call_required(base, lag) < base
+    assert exploit.adj_call_required(base, station) > base
+    assert exploit.adj_call_required(base, nit) > exploit.adj_call_required(base, station)

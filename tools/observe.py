@@ -79,7 +79,7 @@ def main() -> None:
                     if sig != last:
                         last = sig
                         reads = _reads(gs, store)
-                        d = decide(gs, rng, iterations=3000, reads=reads)
+                        d = decide(gs, rng, iterations=1500, reads=reads)
                         villain = primary_villain_read(gs, reads)
                         vtag = f"  vs {classify(villain)}" if villain and villain.hands >= 15 else ""
                         hole = " ".join(map(str, gs.hero.cards)) or "??"
@@ -91,8 +91,7 @@ def main() -> None:
                         print(f"   => WOULD {d.action.name}{amt}{eq}   {d.rationale}\n")
                 except Exception as e:  # noqa: BLE001 - keep watching through transient read errors
                     print("read error:", e)
-                time.sleep(0.5)
-            time.sleep(0.3)
+            time.sleep(0.2)   # poll fast; the sig-dedup prevents re-printing the same spot
     except KeyboardInterrupt:
         print("\nstopped.")
         browser.close()
