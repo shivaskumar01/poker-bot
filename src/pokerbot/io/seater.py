@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 
-from .prompts import resolve_email_login
+from .prompts import EmailLogin
 
 _CONFIRM_RE = re.compile(r"sit|join|i'?m in|buy[\s-]?in|confirm|take a? seat|^\s*ok\s*$|^\s*go\s*$", re.I)
 _SUBMIT_NAME_RE = re.compile(r"^\s*(enter|continue|ok|join|next|submit|done|play)\s*$", re.I)
@@ -28,11 +28,11 @@ class Seater:
         self._sleep = sleep
         self.log = log
         self.should_stop = should_stop
+        self.login = EmailLogin(rng, log=log)        # one inbox for the whole login
         self.last_diag = ""
 
     def _email(self) -> None:
-        resolve_email_login(self.page, self.sel, self.rng, log=self.log,
-                            sleep=self._sleep, should_stop=self.should_stop)
+        self.login.run(self.page, self.sel, sleep=self._sleep, should_stop=self.should_stop)
 
     # --- tiny DOM helpers (kept small so a fake page can drive them in tests) ---
     def _visible(self, selector: str):

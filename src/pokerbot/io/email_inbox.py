@@ -19,7 +19,14 @@ import urllib.error
 import urllib.request
 
 API = "https://api.mail.tm"
-_CODE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
+_LABELED = re.compile(r"(?:code|verification|verify|confirm|otp|pin)\D{0,24}(\d{6})", re.I)
+_BARE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
+
+
+def extract_code(text: str) -> str | None:
+    """Pull the 6-digit login code from an email body — prefer one labeled 'code/verification'."""
+    m = _LABELED.search(text or "") or _BARE.search(text or "")
+    return m.group(1) if m else None
 
 
 def _req(method: str, path: str, token: str | None = None, data: dict | None = None) -> dict:
@@ -77,20 +84,25 @@ class TempInbox:
             html = full.get("html") or []
             blob = " ".join([m.get("subject", ""), m.get("intro", ""), full.get("text", ""),
                              " ".join(html) if isinstance(html, list) else str(html)])
-            hit = _CODE_RE.search(blob)
-            if hit:
-                return hit.group(1)
+            code = extract_code(blob)
+            if code:
+                return code
         return None
+
+    def poll_once(self, senders=("pokernow",), log=lambda m: None) -> str | None:
+        """One inbox scan; returns the code if a matching email has arrived, else None."""
+        try:
+            return self._scan_for_code(senders)
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+            log(f"inbox poll error: {e}")
+            return None
 
     def wait_for_code(self, *, timeout: float = 120.0, sleep=time.sleep, should_stop=lambda: False,
                       senders=("pokernow",), log=lambda m: None) -> str | None:
         end = time.time() + timeout
         while time.time() < end and not should_stop():
-            try:
-                code = self._scan_for_code(senders)
-                if code:
-                    return code
-            except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-                log(f"inbox poll error: {e}")
+            code = self.poll_once(senders, log)
+            if code:
+                return code
             sleep(4.0)
         return None
