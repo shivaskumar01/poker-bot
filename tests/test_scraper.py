@@ -5,6 +5,7 @@ from pokerbot.io.scraper import (
     RawObservation,
     RawSeat,
     card_from_classes,
+    parse_blinds_text,
     parse_card_text,
     parse_money,
     to_game_state,
@@ -24,6 +25,15 @@ def test_parse_money():
     assert parse_money("$25") == D("25")
     assert parse_money("0\n\ntotal 0") == D("0")     # PokerNow pot element text
     assert parse_money("") == D("0")
+
+
+def test_parse_blinds_text():
+    assert parse_blinds_text("Blinds: 0.50/1.00") == (D("0.50"), D("1.00"))
+    assert parse_blinds_text("NL Hold'em 1 / 2") == (D("1"), D("2"))
+    assert parse_blinds_text("No Limit Hold'em $2/$5") == (D("2"), D("5"))
+    assert parse_blinds_text("blinds 5/10 ante 1") == (D("5"), D("10"))   # ignore ante (10 > 5*3? no)
+    assert parse_blinds_text("no blinds here") is None
+    assert parse_blinds_text("ratio 1/100") is None                      # not a sane sb/bb pair
 
 
 def test_parse_card_text_glyph_and_ascii():

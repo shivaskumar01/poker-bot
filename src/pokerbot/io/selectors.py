@@ -29,6 +29,9 @@ class Selectors:
     # --- pot ---
     pot: str = ".table-pot-size"
 
+    # --- blinds level display (best-effort; read_blinds also scans the page text) ---
+    blinds: str = ".table-game-infos, [class*='blind-value'], [class*='game-name']"
+
     # --- action controls (by class; text is unreliable) ---
     action_area: str = ".game-decisions-ctn"
     btn_fold: str = ".game-decisions-ctn button.fold"

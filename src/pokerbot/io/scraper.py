@@ -35,6 +35,24 @@ def parse_money(s: str) -> Decimal:
     return value
 
 
+_BLINDS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
+
+
+def parse_blinds_text(text: str):
+    """Pull a small/big-blind pair out of text like 'NLH 0.25/0.50'. Returns (sb, bb) or None.
+    Filters to plausible blinds (sb <= bb <= 3*sb) and prefers the smallest such pair."""
+    clean = (text or "").translate({ord(c): None for c in "$€£₹"})   # tolerate currency symbols
+    cands = []
+    for a, b in _BLINDS_RE.findall(clean):
+        try:
+            sa, sb = Decimal(a), Decimal(b)
+        except Exception:
+            continue
+        if 0 < sa <= sb <= sa * 3:
+            cands.append((sa, sb))
+    return min(cands, key=lambda p: p[1]) if cands else None
+
+
 def parse_card_text(s: str) -> Card:
     s = s.strip().replace("\n", "").replace(" ", "")
     glyph = {"♠": "s", "♥": "h", "♦": "d", "♣": "c"}
@@ -220,3 +238,31 @@ class Scraper:
             seats=seats, board=board, pot=pot_el.inner_text() if pot_el else "0",
             to_call=self._to_call_text(), button_seat_id=button_seat,
         )
+
+    def read_blinds(self):
+        """Best-effort live blinds (sb, bb) or None — checks blind-ish elements then the page."""
+        for sel in (self.sel.blinds, "[class*='blind']", "[class*='stake']", "[class*='game-name']"):
+            if not sel:
+                continue
+            try:
+                for el in self.page.query_selector_all(sel):
+                    found = parse_blinds_text(el.inner_text() or "")
+                    if found:
+                        return found
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            return parse_blinds_text(self.page.inner_text("body"))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def read_hero_stack(self):
+        """Hero's current stack (Decimal) or None — used for live stop-loss + bust detection."""
+        for el in self.page.query_selector_all(self.sel.seat):
+            classes = el.get_attribute("class") or ""
+            name_el = el.query_selector(self.sel.seat_name)
+            name = name_el.inner_text().strip() if name_el else None
+            if self.sel.hero_seat_class in classes or (self.hero_name and name == self.hero_name):
+                st = el.query_selector(self.sel.seat_stack)
+                return parse_money(st.inner_text()) if st else None
+        return None

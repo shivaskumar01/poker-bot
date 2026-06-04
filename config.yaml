@@ -10,9 +10,10 @@ table:
   site: club               # club  -> www.pokernow.club  |  network -> network.pokernow.com
 
 stakes:
-  small_blind: "0.50"      # strings -> parsed to Decimal (never float for money)
+  small_blind: "0.50"      # fallback only — blinds are auto-detected from the live table
   big_blind: "1.00"
   ante: "0"
+  buy_in: "0"              # the bot's buy-in (for the re-buy prompt + display); 0 = ask in the UI
   currency: chips
 
 limits:

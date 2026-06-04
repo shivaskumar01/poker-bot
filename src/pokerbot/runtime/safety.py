@@ -40,6 +40,11 @@ class SessionGuard:
     def count_hand(self) -> None:
         self.hands += 1
 
+    def reset_baseline(self, stack: Decimal) -> None:
+        """Re-anchor the bankroll baseline (e.g. after a re-buy) so stop-loss measures fresh."""
+        self.start = stack
+        self.current = stack
+
     @property
     def net_bb(self) -> float:
         if self.start is None or self.current is None or self.bb <= 0:

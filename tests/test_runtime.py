@@ -9,8 +9,8 @@ from pokerbot.runtime.safety import Limits, SessionGuard
 
 def _cfg(mode="observe", consent=False):
     return Config(mode=mode, players_consent=consent, table_url="", small_blind=D("0.5"),
-                  big_blind=D("1"), ante=D("0"), hero_name=None, stop_loss_bb=200, stop_win_bb=400,
-                  max_hands=500, mc_iterations=300, min_think=0.0, max_think=0.0,
+                  big_blind=D("1"), ante=D("0"), buy_in=D("100"), hero_name=None, stop_loss_bb=200,
+                  stop_win_bb=400, max_hands=500, mc_iterations=300, min_think=0.0, max_think=0.0,
                   db_path=":none:", hand_log_path="", kill_file="STOP")
 
 
@@ -84,6 +84,45 @@ def test_session_guard_max_hands():
     g.count_hand()
     g.count_hand()
     assert g.should_stop()[0] and "max hands" in g.should_stop()[1]
+
+
+class _TableScraper:
+    """Fake supporting the out-of-turn table check (auto blinds + hero stack)."""
+
+    def __init__(self, blinds, stack):
+        self.blinds = blinds
+        self.stack = stack
+
+    def read_blinds(self):
+        return self.blinds
+
+    def read_hero_stack(self):
+        return self.stack
+
+
+def test_table_check_autodetects_changing_blinds():
+    sc = _TableScraper((D("1"), D("2")), D("150"))
+    g = _guard()
+    status = {}
+    bot = LiveBot(sc, _RecExec(False), None, _cfg(), g, on_status=lambda d: status.update(d))
+    bot._table_check()
+    assert bot.config.small_blind == D("1") and bot.config.big_blind == D("2")
+    assert g.bb == D("2")                              # stop-loss now measured in the new bb
+    assert status["needs_rebuy"] is False and status["stack"] == "150"
+
+
+def test_bust_then_rebuy_reanchors_bankroll():
+    sc = _TableScraper((D("0.5"), D("1")), D("0"))     # bot is stacked
+    g = _guard()
+    g.observe_bankroll(D("100"))
+    bot = LiveBot(sc, _RecExec(True), None, _cfg("execute", True), g)
+    bot._table_check()
+    assert bot._needs_rebuy is True                    # UI shows the re-buy banner, acting pauses
+    bot.request_rebuy()                                # user tops up at the table + confirms
+    sc.stack = D("100")
+    bot._table_check()
+    assert bot._needs_rebuy is False
+    assert g.start == D("100") and g.net_bb == 0.0     # fresh baseline after the second buy-in
 
 
 def test_kill_switch(tmp_path):

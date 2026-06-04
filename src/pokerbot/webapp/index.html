@@ -63,6 +63,14 @@
   <div id="status">idle</div>
 </header>
 
+<div id="rebuy" style="display:none; align-items:center; gap:14px; background:#2a0d0d;
+     border-bottom:1px solid #5c1f1f; color:#ffd9d9; padding:12px 20px; font-size:13px;">
+  <b style="color:var(--red)">Bot busted.</b>
+  <span>The bot lost its buy-in. Top its stack back up at the table, then confirm the re-buy to resume acting.</span>
+  <span id="rebuy-amt" style="color:var(--gold)"></span>
+  <button class="btn-go" id="rebuyBtn" style="margin-left:auto">I’ve re-bought — resume</button>
+</div>
+
 <div class="wrap">
   <!-- left: config + session -->
   <div>
@@ -71,9 +79,11 @@
       <label>PokerNow table URL</label>
       <input id="url" placeholder="https://www.pokernow.com/games/…"/>
       <div class="row">
-        <div><label>Small blind</label><input id="sb" value="0.25"/></div>
-        <div><label>Big blind</label><input id="bb" value="0.50"/></div>
+        <div><label>Small blind (fallback)</label><input id="sb" value="0.25"/></div>
+        <div><label>Big blind (fallback)</label><input id="bb" value="0.50"/></div>
       </div>
+      <label>Bot buy-in (chips)</label>
+      <input id="buyin" placeholder="e.g. 200"/>
       <label>Your name (blank = auto-detect)</label>
       <input id="hero" placeholder="auto"/>
       <label>Mode</label>
@@ -87,6 +97,9 @@
     </div>
     <div class="panel" style="margin-top:16px">
       <h2>Session</h2>
+      <div class="stat"><span>Blinds (auto)</span><b id="s-blinds">—</b></div>
+      <div class="stat"><span>Bot stack</span><b id="s-stack">—</b></div>
+      <div class="stat"><span>Buy-in</span><b id="s-buyin">—</b></div>
       <div class="stat"><span>Hands</span><b id="s-hands">0</b></div>
       <div class="stat"><span>Net (bb)</span><b id="s-net">0.0</b></div>
       <div class="stat"><span>Mode</span><b id="s-mode">observe</b></div>
@@ -144,6 +157,11 @@ async function poll(){
     $('s-hands').textContent = s.session.hands;
     $('s-net').textContent = (s.session.net_bb>=0?'+':'') + s.session.net_bb;
     $('s-mode').textContent = s.mode;
+    if(s.blinds) $('s-blinds').textContent = s.blinds.sb + ' / ' + s.blinds.bb;
+    $('s-stack').textContent = (s.stack!=null)? s.stack : '—';
+    $('s-buyin').textContent = (s.buy_in && s.buy_in!=='0')? s.buy_in : '—';
+    $('rebuy').style.display = s.needs_rebuy ? 'flex' : 'none';
+    $('rebuy-amt').textContent = (s.needs_rebuy && s.buy_in && s.buy_in!=='0') ? ('Suggested re-buy: '+s.buy_in) : '';
     if(s.hand){
       const h=s.hand;
       $('meta').innerHTML = `<b>${h.street}</b> · pos <b>${h.position||'?'}</b> · pot <b>${h.pot}</b> · to call <b>${h.to_call}</b> · ${h.opponents} opp` + (h.villain?` · vs <b>${h.villain}</b>`:'');
@@ -176,15 +194,17 @@ async function loadProfiles(){
 async function loadConfig(){
   try{ const c = await (await fetch('/api/config')).json();
     if(c.url) $('url').value=c.url; $('sb').value=c.sb; $('bb').value=c.bb;
+    if(c.buy_in && c.buy_in!=='0') $('buyin').value=c.buy_in;
     $('hero').value=c.hero; $('mode').value=c.mode; $('consent').checked=c.consent;
   }catch(e){}
 }
 $('start').onclick = async ()=>{
   await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({url:$('url').value, sb:$('sb').value, bb:$('bb').value, hero:$('hero').value,
-                         mode:$('mode').value, consent:$('consent').checked})});
+    body:JSON.stringify({url:$('url').value, sb:$('sb').value, bb:$('bb').value, buy_in:$('buyin').value,
+                         hero:$('hero').value, mode:$('mode').value, consent:$('consent').checked})});
 };
 $('stop').onclick = ()=> fetch('/api/stop',{method:'POST'});
+$('rebuyBtn').onclick = ()=> fetch('/api/rebuy',{method:'POST'});
 $('analyze').onclick = async (e)=>{ e.target.textContent='learning…';
   const r = await (await fetch('/api/analyze',{method:'POST'})).json();
   e.target.textContent='Re-learn from logs'; await loadProfiles();

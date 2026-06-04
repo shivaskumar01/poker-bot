@@ -18,7 +18,7 @@ from ..strategy.engine import decide, primary_villain_read
 class LiveBot:
     def __init__(self, scraper, executor, store, config, guard,
                  rng: random.Random | None = None, logfile=None,
-                 on_decision=None, stop_event=None) -> None:
+                 on_decision=None, stop_event=None, on_status=None) -> None:
         self.scraper = scraper
         self.executor = executor
         self.store = store
@@ -27,7 +27,47 @@ class LiveBot:
         self.rng = rng or random.Random()
         self.logfile = logfile
         self.on_decision = on_decision   # callback(gs, decision, reads) for a UI
+        self.on_status = on_status       # callback(dict) for blinds/stack/re-buy updates
         self.stop_event = stop_event     # threading.Event to request a stop
+        self._needs_rebuy = False
+        self._rebuy_requested = False
+        self._last_check = 0.0
+
+    def request_rebuy(self) -> None:
+        """Called from another thread (the UI) — confirms a second buy-in; the bot thread
+        re-anchors the bankroll on its next table check and resumes acting."""
+        self._rebuy_requested = True
+
+    def _table_check(self) -> None:
+        """Out-of-turn upkeep: auto-detect (changing) blinds, track the stack for stop-loss,
+        and detect a bust so the UI can ask for a re-buy. Runs in the bot (Playwright) thread."""
+        try:
+            blinds = self.scraper.read_blinds()
+            if blinds and blinds[1] > 0 and blinds[1] != self.config.big_blind:
+                self.config.small_blind, self.config.big_blind = blinds
+                self.guard.bb = blinds[1]
+            stack = self.scraper.read_hero_stack()
+            if self._rebuy_requested:
+                self._rebuy_requested = False
+                self._needs_rebuy = False
+                if stack is not None:
+                    self.guard.reset_baseline(stack)
+            if stack is not None:
+                self.guard.observe_bankroll(stack)
+                if stack <= 0:
+                    self._needs_rebuy = True
+            if self.on_status:
+                self.on_status({
+                    "small_blind": str(self.config.small_blind),
+                    "big_blind": str(self.config.big_blind),
+                    "stack": str(stack) if stack is not None else None,
+                    "buy_in": str(self.config.buy_in),
+                    "needs_rebuy": self._needs_rebuy,
+                    "net_bb": round(self.guard.net_bb, 1),
+                    "hands": self.guard.hands,
+                })
+        except Exception as e:  # noqa: BLE001 - upkeep must never crash the loop
+            print("table-check error:", e)
 
     # --- helpers ---
     def _reads(self, gs):
@@ -78,6 +118,10 @@ class LiveBot:
                 print(f"\n== stopping: {why} | net {self.guard.net_bb:+.1f}bb over "
                       f"{self.guard.hands} hands ==")
                 return
+            now = time.time()
+            if now - self._last_check > 2.0:        # auto-detect blinds, track stack, detect bust
+                self._last_check = now
+                self._table_check()
             try:
                 if self.scraper.is_hero_turn():
                     raw = self.scraper.read_observation()
@@ -96,7 +140,7 @@ class LiveBot:
                         self._log(gs, d)
                         if self.on_decision is not None:
                             self.on_decision(gs, d, reads)
-                        if self.executor.can_act:
+                        if self.executor.can_act and not self._needs_rebuy:
                             self.guard.think()
                             self.executor.execute(d)
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors

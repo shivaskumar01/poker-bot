@@ -45,11 +45,14 @@ class BotController:
         self.stop_event: threading.Event | None = None
         self.browser: Browser | None = None
         self.guard: SessionGuard | None = None
+        self.bot = None
         self.state = self._idle()
 
     def _idle(self) -> dict:
         return {"status": "idle", "mode": self.cfg.mode, "hand": None, "decision": None,
-                "session": {"hands": 0, "net_bb": 0.0}, "log": [], "error": None}
+                "session": {"hands": 0, "net_bb": 0.0}, "log": [], "error": None,
+                "blinds": {"sb": str(self.cfg.small_blind), "bb": str(self.cfg.big_blind)},
+                "stack": None, "buy_in": str(self.cfg.buy_in), "needs_rebuy": False}
 
     def _set(self, **kw) -> None:
         with self.lock:
@@ -82,6 +85,23 @@ class BotController:
         if self.stop_event:
             self.stop_event.set()
         self._set(status="stopping…")
+
+    def request_rebuy(self) -> bool:
+        """UI confirmed a second buy-in — tell the bot thread to re-anchor + resume."""
+        if self.bot is not None:
+            self.bot.request_rebuy()
+            return True
+        return False
+
+    def _on_status(self, d: dict) -> None:
+        with self.lock:
+            self.state["blinds"] = {"sb": d["small_blind"], "bb": d["big_blind"]}
+            self.state["stack"] = d["stack"]
+            self.state["buy_in"] = d["buy_in"]
+            self.state["needs_rebuy"] = d["needs_rebuy"]
+            self.state["session"] = {"hands": d["hands"], "net_bb": d["net_bb"]}
+            if d["needs_rebuy"]:
+                self.state["status"] = "bot busted — confirm a re-buy to keep playing"
 
     def _on_decision(self, gs, d, reads) -> None:
         villain = primary_villain_read(gs, reads)
@@ -117,7 +137,9 @@ class BotController:
                                       cfg.big_blind, kill_file=os.path.join(ROOT, cfg.kill_file),
                                       think=(cfg.min_think, cfg.max_think))
             bot = LiveBot(scraper, executor, store, cfg, self.guard,
-                          on_decision=self._on_decision, stop_event=self.stop_event)
+                          on_decision=self._on_decision, on_status=self._on_status,
+                          stop_event=self.stop_event)
+            self.bot = bot
             bot.run()
             self._set(status="stopped")
         except Exception as e:  # noqa: BLE001 - surface errors to the UI
@@ -129,6 +151,7 @@ class BotController:
             except Exception:  # noqa: BLE001
                 pass
             self.browser = None
+            self.bot = None
 
 
 def create_app():
@@ -147,7 +170,7 @@ def create_app():
     @app.get("/api/config")
     def get_config():
         return jsonify({"url": cfg.table_url, "sb": str(cfg.small_blind), "bb": str(cfg.big_blind),
-                        "hero": cfg.hero_name or "", "mode": cfg.mode,
+                        "hero": cfg.hero_name or "", "mode": cfg.mode, "buy_in": str(cfg.buy_in),
                         "consent": cfg.players_consent, "stop_loss_bb": cfg.stop_loss_bb})
 
     @app.post("/api/start")
@@ -155,6 +178,7 @@ def create_app():
         d = request.get_json(force=True) or {}
         cfg.small_blind = type(cfg.small_blind)(str(d.get("sb", cfg.small_blind)))
         cfg.big_blind = type(cfg.big_blind)(str(d.get("bb", cfg.big_blind)))
+        cfg.buy_in = type(cfg.buy_in)(str(d.get("buy_in") or "0"))
         cfg.hero_name = (d.get("hero") or "").strip() or None
         ok = ctrl.start(d.get("url", "").strip(), d.get("mode", "observe"), bool(d.get("consent")))
         return jsonify({"ok": ok, "running": ctrl.running()})
@@ -163,6 +187,10 @@ def create_app():
     def stop():
         ctrl.stop()
         return jsonify({"ok": True})
+
+    @app.post("/api/rebuy")
+    def rebuy():
+        return jsonify({"ok": ctrl.request_rebuy()})
 
     @app.get("/api/profiles")
     def profiles():

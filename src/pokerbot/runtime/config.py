@@ -15,6 +15,7 @@ class Config:
     small_blind: Decimal
     big_blind: Decimal
     ante: Decimal
+    buy_in: Decimal
     hero_name: str | None      # None -> identify hero by the .you-player class
     stop_loss_bb: float
     stop_win_bb: float
@@ -42,6 +43,7 @@ def load_config(path: str = "config.yaml") -> Config:
         small_blind=Decimal(str(stakes.get("small_blind", "0.50"))),
         big_blind=Decimal(str(stakes.get("big_blind", "1.00"))),
         ante=Decimal(str(stakes.get("ante", "0"))),
+        buy_in=Decimal(str(stakes.get("buy_in", "0"))),
         hero_name=d.get("hero_name") or None,
         stop_loss_bb=float(limits.get("stop_loss_bb", 200)),
         stop_win_bb=float(limits.get("stop_win_bb", 400)),
