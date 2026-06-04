@@ -89,7 +89,7 @@ def test_take_seat_clicks_sit_then_requests_with_buyin():
     s = _seater(page)
     assert s.take_seat(timeout=5) is True
     assert page.sit_clicked and page.requested
-    assert page.buyin == "200.00"          # decimals preserved into the buy-in box
+    assert page.buyin == "200"             # 200.00 -> '200' typed into the Intended Stack box
     assert page.seated
 
 

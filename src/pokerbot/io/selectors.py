@@ -31,8 +31,11 @@ class Selectors:
     code_input: str = ("input[autocomplete='one-time-code'], input[name*='code' i], "
                        "input[placeholder*='code' i], [class*='verif'] input, [class*='code'] input, "
                        "input[maxlength='6'], input[maxlength='1']")
-    buyin_input: str = ("[class*='buyin'] input, [class*='buy-in'] input, [class*='add-chips'] input, "
-                        "[class*='stack'] input, .modal input[type='number'], "
+    # PokerNow's seat dialog: the stack box is <input type=text placeholder="Intended Stack"
+    # inputmode=numeric> with NO class/name/id — so match it by placeholder/inputmode first.
+    buyin_input: str = ("input[placeholder*='intended' i], input[placeholder*='stack' i], "
+                        "input[placeholder*='buy' i], input[inputmode='numeric'], "
+                        "[class*='buyin'] input, [class*='buy-in'] input, [class*='stack'] input, "
                         "input[type='number'], input[type='range']")
 
     # --- cards (.card-container with card-<suit> + card-s-<rank>; .flipped = face up) ---

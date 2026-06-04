@@ -121,14 +121,52 @@ class Seater:
         rx = re.compile(r"request the seat|buy[\s-]?in|i'?m in", re.I)
         return any(rx.search((el.inner_text() or "").strip()) for el in self._buttons())
 
+    def _buyin_text(self) -> str:
+        """A whole-number buy-in types as '200' (not '200.00'); keep cents only when non-zero."""
+        amt = self.buy_in
+        try:
+            return str(int(amt)) if amt == amt.to_integral_value() else f"{amt:.2f}"
+        except Exception:  # noqa: BLE001
+            return str(amt)
+
     def _fill_buyin(self) -> bool:
+        text = self._buyin_text()
         for el in self._visible(self.sel.buyin_input):
-            try:
-                el.fill(str(self.buy_in))
+            if self._type_value(el, text):
                 return True
+        return False
+
+    def _type_value(self, el, text: str) -> bool:
+        """Type into a (React-controlled) field with real keystrokes so onChange fires; fall back
+        to fill(). Clears any prefill first."""
+        try:
+            el.click()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            el.fill("")
+        except Exception:  # noqa: BLE001
+            pass
+        for meth in ("press_sequentially", "type"):
+            fn = getattr(el, meth, None)
+            if fn is None:
+                continue
+            try:
+                fn(text, delay=40)
+                return True
+            except TypeError:
+                try:
+                    fn(text)
+                    return True
+                except Exception:  # noqa: BLE001
+                    pass
             except Exception:  # noqa: BLE001
                 pass
-        return False
+        try:
+            el.fill(text)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def _diag(self) -> str:
         btns = []

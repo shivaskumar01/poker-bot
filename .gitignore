@@ -8,3 +8,5 @@ data/*.jsonl
 *.log
 .DS_Store
 playwright-profile/
+data/*.txt
+data/dom_dump.txt
