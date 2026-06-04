@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Poker Bot</title>
+<style>
+  :root{ --bg:#0f1714; --panel:#16211d; --line:#26352f; --felt:#1f5c45; --ink:#e8efe9;
+         --muted:#8aa399; --green:#34c77b; --blue:#4ea1ff; --red:#ff6b6b; --gold:#d9a441; }
+  *{ box-sizing:border-box; } html,body{ margin:0; height:100%; }
+  body{ background:var(--bg); color:var(--ink); font:14px/1.45 -apple-system,Segoe UI,Inter,sans-serif; }
+  header{ display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); }
+  header h1{ font-size:18px; margin:0; font-weight:650; } header .spade{ color:var(--gold); }
+  #status{ margin-left:auto; font-size:12.5px; color:var(--muted); background:var(--panel);
+           border:1px solid var(--line); padding:6px 12px; border-radius:999px; }
+  #status.run{ color:var(--green); border-color:#1f5c45; }
+  .wrap{ display:grid; grid-template-columns:300px 1fr 360px; gap:16px; padding:16px 20px; align-items:start; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .panel h2{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; }
+  label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input,select{ width:100%; background:#0d1411; border:1px solid var(--line); color:var(--ink);
+                border-radius:8px; padding:8px 10px; font-size:13px; }
+  .row{ display:flex; gap:8px; } .row>*{ flex:1; }
+  .check{ display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--muted); font-size:13px; }
+  .check input{ width:auto; }
+  button{ border:0; border-radius:9px; padding:11px 14px; font-weight:600; font-size:13.5px; cursor:pointer; color:#06120d; }
+  .btn-go{ background:var(--green); } .btn-stop{ background:var(--red); color:#1a0606; }
+  .btn-ghost{ background:transparent; color:var(--ink); border:1px solid var(--line); }
+  .btns{ display:flex; gap:8px; margin-top:16px; }
+  .stat{ display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px dashed var(--line); }
+  .stat:last-child{ border:0; } .stat b{ font-variant-numeric:tabular-nums; }
+  .felt{ background:radial-gradient(circle at 50% 38%, #2a7a5c, var(--felt)); border:1px solid #0c3a2b;
+         border-radius:16px; padding:26px 20px; min-height:150px; text-align:center; }
+  .felt .meta{ color:#cfe9dd; font-size:12.5px; margin-bottom:14px; }
+  .felt .meta b{ color:#fff; }
+  .cards{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; min-height:64px; align-items:center; }
+  .lbl{ color:#bfe0d2; font-size:11px; letter-spacing:.1em; text-transform:uppercase; margin:14px 0 6px; }
+  .card{ display:inline-flex; align-items:center; justify-content:center; min-width:42px; height:60px;
+         background:#fbfbf7; border-radius:7px; font-size:22px; font-weight:700; box-shadow:0 2px 6px rgba(0,0,0,.35); }
+  .card.red{ color:#d23b3b; } .card.black{ color:#1a1a1a; }
+  .decision{ margin-top:16px; border-radius:12px; padding:18px; text-align:center; background:#101a16; border:1px solid var(--line); }
+  .decision .act{ font-size:30px; font-weight:800; letter-spacing:.01em; }
+  .decision .why{ color:var(--muted); margin-top:6px; font-size:13px; }
+  .a-fold{ color:var(--red); } .a-call,.a-check{ color:var(--blue); } .a-bet,.a-raise{ color:var(--green); }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td{ text-align:right; padding:6px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th:first-child,td:first-child{ text-align:left; }
+  .tag{ font-size:11px; padding:2px 7px; border-radius:999px; background:#0d1411; border:1px solid var(--line); }
+  .tag.maniac,.tag.lag{ color:var(--red); } .tag.station{ color:var(--gold); } .tag.nit,.tag.tag{ color:var(--blue); }
+  #log{ font:12px/1.5 ui-monospace,Menlo,monospace; color:var(--muted); max-height:240px; overflow:auto; white-space:pre-wrap; }
+  .hint{ font-size:11.5px; color:var(--muted); margin-top:10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="spade">♠</span> Poker Bot <span style="color:var(--muted);font-weight:400">control panel</span></h1>
+  <div id="status">idle</div>
+</header>
+
+<div class="wrap">
+  <!-- left: config + session -->
+  <div>
+    <div class="panel">
+      <h2>Table</h2>
+      <label>PokerNow table URL</label>
+      <input id="url" placeholder="https://www.pokernow.com/games/…"/>
+      <div class="row">
+        <div><label>Small blind</label><input id="sb" value="0.25"/></div>
+        <div><label>Big blind</label><input id="bb" value="0.50"/></div>
+      </div>
+      <label>Your name (blank = auto-detect)</label>
+      <input id="hero" placeholder="auto"/>
+      <label>Mode</label>
+      <select id="mode"><option value="observe">Observe (watch only)</option><option value="execute">Execute (bot acts)</option></select>
+      <label class="check"><input type="checkbox" id="consent"/> Everyone at the table consents to a bot</label>
+      <div class="btns">
+        <button class="btn-go" id="start">Start</button>
+        <button class="btn-stop" id="stop">Stop</button>
+      </div>
+      <div class="hint">Execute requires consent. Create a file named <b>STOP</b> in the project to halt instantly.</div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Session</h2>
+      <div class="stat"><span>Hands</span><b id="s-hands">0</b></div>
+      <div class="stat"><span>Net (bb)</span><b id="s-net">0.0</b></div>
+      <div class="stat"><span>Mode</span><b id="s-mode">observe</b></div>
+    </div>
+  </div>
+
+  <!-- center: live hand + decision -->
+  <div class="panel">
+    <h2>Live hand</h2>
+    <div class="felt">
+      <div class="meta" id="meta">Waiting for a hand…</div>
+      <div class="lbl">Board</div>
+      <div class="cards" id="board"></div>
+      <div class="lbl">Your hand</div>
+      <div class="cards" id="hole"></div>
+    </div>
+    <div class="decision">
+      <div class="act" id="act">—</div>
+      <div class="why" id="why">Start the bot and sit at your table.</div>
+    </div>
+  </div>
+
+  <!-- right: opponents + log -->
+  <div>
+    <div class="panel">
+      <h2>Opponents <button class="btn-ghost" id="analyze" style="float:right;padding:4px 10px;font-size:11px">Re-learn from logs</button></h2>
+      <table><thead><tr><th>Player</th><th>Hands</th><th>VPIP</th><th>PFR</th><th>AF</th><th>Type</th></tr></thead>
+        <tbody id="profiles"><tr><td colspan="6" style="color:var(--muted)">no profiles yet</td></tr></tbody></table>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Decision log</h2>
+      <div id="log">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const SUIT = {s:'♠',h:'♥',d:'♦',c:'♣'};
+function cardHTML(c){
+  const r = c.slice(0,-1).replace('T','10'); const s = c.slice(-1);
+  const red = (s==='h'||s==='d');
+  return `<span class="card ${red?'red':'black'}">${r}<span style="font-size:18px">${SUIT[s]||''}</span></span>`;
+}
+function cards(el, arr){ el.innerHTML = (arr&&arr.length)? arr.map(cardHTML).join('') : '<span style="color:#bfe0d2">—</span>'; }
+
+async function poll(){
+  try{
+    const s = await (await fetch('/api/state')).json();
+    const st = $('status'); st.textContent = s.status; st.className = s.running ? 'run' : '';
+    $('s-hands').textContent = s.session.hands;
+    $('s-net').textContent = (s.session.net_bb>=0?'+':'') + s.session.net_bb;
+    $('s-mode').textContent = s.mode;
+    if(s.hand){
+      const h=s.hand;
+      $('meta').innerHTML = `<b>${h.street}</b> · pos <b>${h.position||'?'}</b> · pot <b>${h.pot}</b> · to call <b>${h.to_call}</b> · ${h.opponents} opp` + (h.villain?` · vs <b>${h.villain}</b>`:'');
+      cards($('board'), h.board); cards($('hole'), h.hole);
+    }
+    if(s.decision){
+      const d=s.decision; const a=d.action.toLowerCase();
+      const amt = (d.action==='BET'||d.action==='RAISE')? ' '+d.amount : '';
+      const eq = (d.equity!=null)? `  ·  eq ${(d.equity*100).toFixed(0)}%` : '';
+      $('act').innerHTML = `<span class="a-${a}">${d.action}${amt}</span>`;
+      $('why').textContent = d.rationale + (eq?eq:'');
+    }
+    $('log').textContent = (s.log&&s.log.length)? s.log.join('\n') : '—';
+  }catch(e){ /* server momentarily busy */ }
+}
+async function loadProfiles(){
+  const p = await (await fetch('/api/profiles')).json();
+  const body = $('profiles');
+  body.innerHTML = p.length ? p.map(x=>`<tr><td>${x.name}</td><td>${x.hands}</td><td>${x.vpip}</td><td>${x.pfr}</td><td>${x.af}</td><td><span class="tag ${x.type}">${x.type}</span></td></tr>`).join('')
+    : '<tr><td colspan="6" style="color:var(--muted)">no profiles — click “Re-learn from logs”</td></tr>';
+}
+async function loadConfig(){
+  try{ const c = await (await fetch('/api/config')).json();
+    if(c.url) $('url').value=c.url; $('sb').value=c.sb; $('bb').value=c.bb;
+    $('hero').value=c.hero; $('mode').value=c.mode; $('consent').checked=c.consent;
+  }catch(e){}
+}
+$('start').onclick = async ()=>{
+  await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url:$('url').value, sb:$('sb').value, bb:$('bb').value, hero:$('hero').value,
+                         mode:$('mode').value, consent:$('consent').checked})});
+};
+$('stop').onclick = ()=> fetch('/api/stop',{method:'POST'});
+$('analyze').onclick = async (e)=>{ e.target.textContent='learning…';
+  const r = await (await fetch('/api/analyze',{method:'POST'})).json();
+  e.target.textContent='Re-learn from logs'; await loadProfiles();
+  if(!r.ok) alert(r.error||'no logs found');
+};
+loadConfig(); loadProfiles(); poll(); setInterval(poll, 600);
+</script>
+</body>
+</html>

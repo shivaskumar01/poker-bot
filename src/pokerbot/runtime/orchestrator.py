@@ -17,7 +17,8 @@ from ..strategy.engine import decide, primary_villain_read
 
 class LiveBot:
     def __init__(self, scraper, executor, store, config, guard,
-                 rng: random.Random | None = None, logfile=None) -> None:
+                 rng: random.Random | None = None, logfile=None,
+                 on_decision=None, stop_event=None) -> None:
         self.scraper = scraper
         self.executor = executor
         self.store = store
@@ -25,6 +26,8 @@ class LiveBot:
         self.guard = guard
         self.rng = rng or random.Random()
         self.logfile = logfile
+        self.on_decision = on_decision   # callback(gs, decision, reads) for a UI
+        self.stop_event = stop_event     # threading.Event to request a stop
 
     # --- helpers ---
     def _reads(self, gs):
@@ -67,6 +70,9 @@ class LiveBot:
               f"kill-switch=create a file named '{self.config.kill_file}' to stop\n")
         last = None
         while True:
+            if self.stop_event is not None and self.stop_event.is_set():
+                print("\n== stopped (requested) ==")
+                return
             stop, why = self.guard.should_stop()
             if stop:
                 print(f"\n== stopping: {why} | net {self.guard.net_bb:+.1f}bb over "
@@ -88,6 +94,8 @@ class LiveBot:
                         d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
                         self._announce(gs, d, reads)
                         self._log(gs, d)
+                        if self.on_decision is not None:
+                            self.on_decision(gs, d, reads)
                         if self.executor.can_act:
                             self.guard.think()
                             self.executor.execute(d)

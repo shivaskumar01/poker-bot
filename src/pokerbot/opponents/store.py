@@ -58,5 +58,9 @@ class StatsStore:
         )
         self.conn.commit()
 
+    def all_players(self) -> list[PlayerStats]:
+        names = [r[0] for r in self.conn.execute("SELECT name FROM player_stats").fetchall()]
+        return [self.get(n) for n in names]
+
     def close(self) -> None:
         self.conn.close()
