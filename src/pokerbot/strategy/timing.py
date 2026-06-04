@@ -23,12 +23,16 @@ P_TANK = 0.12     # deliberately go into the tank ...
 P_SNAP = 0.20     # ... or snap, on top of the tank chance (so ~12% tank, ~20% snap, ~68% normal)
 
 
-def think_seconds(decision, gs, rng: random.Random, *, lo: float = 1.5, hi: float = 6.0) -> float:
+def think_seconds(decision, gs, rng: random.Random, *, lo: float = 1.5, hi: float = 6.0,
+                  max_wait: float | None = None) -> float:
     """Seconds to wait before acting. `lo`/`hi` are the typical think window (config min/max);
-    returns 0 when timing is disabled (hi<=0) so tests/headless runs don't sleep."""
+    `max_wait` is a hard ceiling (the table's action budget) so a 'tank' can never run the clock
+    out. Returns 0 when timing is disabled (hi<=0) so tests/headless runs don't sleep."""
     if hi <= 0:
         return 0.0
-    cap = max(hi * 2.2, 12.0)                       # tank ceiling — stays under the action timer
+    cap = max(hi * 2.2, 12.0)                       # tank ceiling
+    if max_wait is not None:                        # ... but never exceed the action budget
+        cap = max(0.3, min(cap, max_wait))
 
     # --- complexity, computed WITHOUT reference to hand strength so the clock can't leak it ---
     t = 0.7 + rng.random() * 0.9                    # base reaction time
@@ -53,9 +57,9 @@ def think_seconds(decision, gs, rng: random.Random, *, lo: float = 1.5, hi: floa
     # --- timing-tell balancing: tank/snap chosen independently of strength ---
     roll = rng.random()
     if roll < P_TANK:
-        return round(rng.uniform(hi, cap), 1)       # into the tank
+        return round(rng.uniform(min(hi, cap), cap), 1)     # into the tank (within budget)
     if roll < P_TANK + P_SNAP:
-        return round(0.4 + rng.random() * 0.6, 1)   # snap
+        return round(min(0.4 + rng.random() * 0.6, cap), 1)  # snap
     return round(min(t, cap), 1)
 
 

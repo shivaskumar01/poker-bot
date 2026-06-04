@@ -9,12 +9,15 @@ import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from ..io.domdump import dump_dom
 from ..io.prompts import EmailLogin
 from ..io.scraper import reconstruct_preflop, to_game_state
 from ..model.state import Action, ActionType, Street
 from ..opponents.classify import classify
 from ..strategy.engine import decide, primary_villain_read
 from ..strategy.timing import tempo_label, think_seconds
+
+_ACTION_SAFETY = 4.0   # always leave this many seconds on the clock to compute + click + register
 
 
 class LiveBot:
@@ -35,6 +38,7 @@ class LiveBot:
         self._rebuy_requested = False
         self._last_check = 0.0
         self._login = None               # lazily-created EmailLogin (persists its inbox)
+        self._turn_dumped = False        # dump the DOM once on the first turn (to read the timer)
 
     def request_rebuy(self) -> None:
         """Called from another thread (the UI) — confirms a second buy-in; the bot thread
@@ -93,6 +97,34 @@ class LiveBot:
                 return
             time.sleep(min(0.2, remaining))
 
+    def _action_budget(self) -> float:
+        """Max seconds we may think this turn: the live action timer minus a safety margin, or the
+        configured cap when the timer can't be read — so the bot is never auto-folded."""
+        try:
+            left = self.scraper.read_seconds_left()
+        except Exception:  # noqa: BLE001
+            left = None
+        if left is not None and left > 0:
+            return max(0.5, left - _ACTION_SAFETY)
+        return self.config.max_action_wait
+
+    def _wait_to_act(self, secs: float) -> None:
+        """Sleep up to `secs`, but bail the moment the action timer is about to expire (or Stop)."""
+        end = time.time() + max(0.0, float(secs))
+        while True:
+            remaining = end - time.time()
+            if remaining <= 0:
+                return
+            if self.stop_event is not None and self.stop_event.is_set():
+                return
+            try:
+                left = self.scraper.read_seconds_left()
+            except Exception:  # noqa: BLE001
+                left = None
+            if left is not None and left <= _ACTION_SAFETY:
+                return                                  # clock almost out — act NOW
+            time.sleep(min(0.25, remaining))
+
     # --- helpers ---
     def _reads(self, gs):
         if self.store is None:
@@ -149,6 +181,11 @@ class LiveBot:
                 self._table_check()
             try:
                 if self.scraper.is_hero_turn():
+                    if not self._turn_dumped:               # one-time: capture the action-timer DOM
+                        self._turn_dumped = True
+                        page = getattr(self.scraper, "page", None)
+                        if page is not None:
+                            dump_dom(page, "hero-turn")
                     raw = self.scraper.read_observation()
                     gs = self._build_state(raw)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),
@@ -161,14 +198,14 @@ class LiveBot:
                                 self.guard.count_hand()
                         reads = self._reads(gs)
                         d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
-                        secs = think_seconds(d, gs, self.rng,
-                                             lo=self.config.min_think, hi=self.config.max_think)
+                        secs = think_seconds(d, gs, self.rng, lo=self.config.min_think,
+                                             hi=self.config.max_think, max_wait=self._action_budget())
                         self._announce(gs, d, reads, secs)
                         self._log(gs, d)
                         if self.on_decision is not None:
                             self.on_decision(gs, d, reads, secs)
                         if self.executor.can_act and not self._needs_rebuy:
-                            self._sleep(secs)            # human-paced + timing-tell balanced
+                            self._wait_to_act(secs)      # human-paced, but never past the action clock
                             self.executor.execute(d)
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors
                 print("loop error:", e)

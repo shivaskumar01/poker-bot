@@ -37,6 +37,15 @@ def test_timing_produces_snaps_and_tanks_even_on_strong_hands():
     assert max(strong) >= 6.0          # tanks occur
 
 
+def test_timing_never_exceeds_action_budget():
+    # with a tight action budget the bot must ALWAYS act within it (never get auto-folded)
+    rng = random.Random(5)
+    vals = [think_seconds(_d(ActionType.RAISE, 0.9), _gs(Street.RIVER), rng,
+                          lo=1.5, hi=6.0, max_wait=3.0) for _ in range(600)]
+    assert max(vals) <= 3.0            # tanks are clamped under the clock
+    assert min(vals) <= 1.0            # still snaps sometimes
+
+
 def test_tempo_label():
     assert tempo_label(None) == ""
     assert tempo_label(0.6).startswith("snap")

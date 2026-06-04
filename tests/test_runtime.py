@@ -11,7 +11,7 @@ def _cfg(mode="observe", consent=False):
     return Config(mode=mode, players_consent=consent, table_url="", small_blind=D("0.5"),
                   big_blind=D("1"), ante=D("0"), buy_in=D("100"), hero_name=None, stop_loss_bb=200,
                   stop_win_bb=400, max_hands=500, mc_iterations=300, min_think=0.0, max_think=0.0,
-                  db_path=":none:", hand_log_path="", kill_file="STOP")
+                  max_action_wait=6.0, db_path=":none:", hand_log_path="", kill_file="STOP")
 
 
 class _FakeScraper:

@@ -23,6 +23,7 @@ class Config:
     mc_iterations: int
     min_think: float
     max_think: float
+    max_action_wait: float     # hard cap on think-time when the live action timer can't be read
     db_path: str
     hand_log_path: str
     kill_file: str
@@ -51,6 +52,7 @@ def load_config(path: str = "config.yaml") -> Config:
         mc_iterations=int(engine.get("mc_iterations", 1500)),
         min_think=float(timing.get("min_think_seconds", 1.5)),
         max_think=float(timing.get("max_think_seconds", 6.0)),
+        max_action_wait=float(timing.get("max_action_wait_seconds", 6.0)),
         db_path=d.get("opponents", {}).get("db_path", "data/opponents.sqlite"),
         hand_log_path=d.get("logging", {}).get("hand_log_path", "data/hands.jsonl"),
         kill_file=d.get("kill_file", "STOP"),

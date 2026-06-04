@@ -256,6 +256,27 @@ class Scraper:
         except Exception:  # noqa: BLE001
             return None
 
+    def read_seconds_left(self):
+        """Best-effort: seconds left on the hero's action timer (or None). Used so the bot acts
+        before PokerNow auto-folds it. Calibrated loosely; the live DOM is dumped on the first turn
+        so the exact timer selector can be confirmed."""
+        sels = (".you-player [class*='time']", ".you-player [class*='timer']",
+                ".you-player [class*='count']", ".decision-current [class*='time']",
+                "[class*='action-timer']", "[class*='time-bank'] [class*='time']")
+        for sel in sels:
+            try:
+                for el in self.page.query_selector_all(sel):
+                    if not el.is_visible():
+                        continue
+                    m = re.search(r"(\d+(?:\.\d+)?)", el.inner_text() or "")
+                    if m:
+                        v = float(m.group(1))
+                        if 0 <= v <= 600:
+                            return v
+            except Exception:  # noqa: BLE001
+                pass
+        return None
+
     def read_hero_stack(self):
         """Hero's current stack (Decimal) or None — used for live stop-loss + bust detection."""
         for el in self.page.query_selector_all(self.sel.seat):
