@@ -125,7 +125,11 @@ class BotController:
     def _run(self, url: str, mode: str, consent: bool) -> None:
         cfg = self.cfg
         try:
+            if not (url or "").strip():
+                self._set(status="enter your PokerNow table URL, then Start", error="no table URL")
+                return
             self.browser = Browser(profile_dir=os.path.expanduser("~/.pokerbot-profile"))
+            self._set(status="launching browser…")
             page = self.browser.open(url)
             self._set(status="browser open — log in & sit at the table; the bot acts on your turn")
             db = os.path.join(ROOT, cfg.db_path)
