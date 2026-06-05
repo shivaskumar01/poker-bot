@@ -36,16 +36,16 @@ def think_seconds(decision, gs, rng: random.Random, *, lo: float = 1.5, hi: floa
         cap = max(0.3, min(cap, max_wait))
     pot_bb = _pot_bb(gs, bb)
 
-    # pot size is the main driver — small pots snappy, big pots a real think (kept compact so it
-    # always fits the action clock; the budget cap is the hard ceiling)
-    t = 0.35 + rng.random() * 0.45                       # base reaction
-    t += min(hi * 0.7, 0.25 + pot_bb * 0.06)            # ~ +0.06s per bb in the pot (capped)
-    t += _STREET_W.get(gs.street, 0.4) * 0.7            # later streets a touch more
+    # CALIBRATED to the friend group's real action tempo from the logs (median 1.7s, p25 1.0,
+    # p75 2.7, p90 4.5): fast bulk, modest pot-scaling, a tail for the tanks. Always fits the clock.
+    t = 0.55 + rng.random() * 0.55                       # base reaction (the bulk)
+    t += min(hi * 0.55, pot_bb * 0.045)                 # gentle pot scaling
+    t += _STREET_W.get(gs.street, 0.3) * 0.55           # later streets a touch more
     if gs.to_call is not None and gs.to_call > 0:
-        t += 0.35                                         # facing a bet
+        t += 0.3                                          # facing a bet
     if decision.equity is not None:                     # close/marginal spots take longer
-        t += (1.0 - min(1.0, abs(decision.equity - 0.5) / 0.5)) * 0.7
-    t *= 0.8 + rng.random() * 0.45                       # human variance
+        t += (1.0 - min(1.0, abs(decision.equity - 0.5) / 0.5)) * 0.55
+    t *= 0.78 + rng.random() * 0.48                      # human variance
 
     # occasional tank / snap, biased by pot size (a big-pot tank, a small-pot snap)
     tank = round(min(rng.uniform(min(hi, cap), cap), cap), 1)
