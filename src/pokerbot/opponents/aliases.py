@@ -10,6 +10,7 @@ from __future__ import annotations
 
 ALIASES = {
     "hungry horse": "bizz",
+    "vani shah": "vik",
     "shivas": "shivas",          # collapse capitalization variants (Shivas/SHIVAS -> shivas)
 }
 
