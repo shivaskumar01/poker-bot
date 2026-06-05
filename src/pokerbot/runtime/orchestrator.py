@@ -152,7 +152,8 @@ class LiveBot:
     def step(self):
         """One decision cycle (assumes it's hero's turn). Acts only if execute+consent."""
         gs, d, reads = self.decide_for(self.scraper.read_observation())
-        secs = think_seconds(d, gs, self.rng, lo=self.config.min_think, hi=self.config.max_think)
+        secs = think_seconds(d, gs, self.rng, lo=self.config.min_think, hi=self.config.max_think,
+                             bb=self.config.big_blind)
         self._log(gs, d)
         acted = False
         if self.executor.can_act:
@@ -199,7 +200,8 @@ class LiveBot:
                         reads = self._reads(gs)
                         d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
                         secs = think_seconds(d, gs, self.rng, lo=self.config.min_think,
-                                             hi=self.config.max_think, max_wait=self._action_budget())
+                                             hi=self.config.max_think, bb=self.config.big_blind,
+                                             max_wait=self._action_budget())
                         self._announce(gs, d, reads, secs)
                         self._log(gs, d)
                         if self.on_decision is not None:

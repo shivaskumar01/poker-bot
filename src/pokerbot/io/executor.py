@@ -56,31 +56,24 @@ class Executor:
         if not self._raise_dumped:                     # capture the panel once for calibration
             self._raise_dumped = True
             dump_dom(self.page, "after-raise-click")
-        self._set_amount(amount)                       # 2) type the amount
-        self._wait(200)
-        if self._click_confirm():                      # 3) confirm (RAISE TO X / BET X / ALL IN)
-            return True
-        return self._click(self.sel.btn_raise)         # fallback: same button may now confirm
+        self._set_amount(amount)                       # 2) set the amount (cents-entry field)
+        self._wait(250)
+        return self._click_confirm()                   # 3) confirm via the SUBMIT input
 
     def _click_confirm(self) -> bool:
-        for el in self._candidate_buttons():
+        el = self.page.query_selector(self.sel.raise_confirm)   # <input type=submit value="Raise/Bet">
+        if el and el.is_enabled():
+            el.click()
+            return True
+        for sel in (f"{self.sel.action_area} button", ".action-buttons button", "button"):  # other variants
             try:
-                if el.is_visible() and el.is_enabled() and _CONFIRM_RE.search((el.inner_text() or "").strip()):
-                    el.click()
-                    return True
+                for b in (self.page.query_selector_all(sel) or []):
+                    if b.is_visible() and b.is_enabled() and _CONFIRM_RE.search((b.inner_text() or "").strip()):
+                        b.click()
+                        return True
             except Exception:  # noqa: BLE001
                 pass
         return False
-
-    def _candidate_buttons(self):
-        for sel in (f"{self.sel.action_area} button", ".action-buttons button", "button"):
-            try:
-                els = self.page.query_selector_all(sel)
-            except Exception:  # noqa: BLE001
-                els = []
-            if els:
-                return els
-        return []
 
     def _click(self, selector: str) -> bool:
         el = self.page.query_selector(selector)
@@ -96,23 +89,26 @@ class Executor:
             pass
 
     def _set_amount(self, amount: Decimal) -> None:
-        """Type the raise-to amount into the bet field with real keystrokes (React-friendly)."""
-        value = str(int(amount)) if amount == amount.to_integral_value() else f"{amount:.2f}"
-        for sel in (f"{self.sel.raise_entry} input", ".raise-bet-value input", "input.value",
-                    f"{self.sel.action_area} input[inputmode='numeric']",
-                    f"{self.sel.action_area} input[type='number']",
-                    f"{self.sel.action_area} input[type='text']"):
-            el = self.page.query_selector(sel)
-            if el:
-                if self._type_into(el, value):
-                    return
-        el = self.page.query_selector(self.sel.raise_entry)
-        if el:
-            try:
-                el.click()
-                self.page.keyboard.type(value)
-            except Exception:  # noqa: BLE001 - execute-mode raise sizing may need a live re-probe
-                pass
+        """The bet box is a CENTS-entry field (typing '1000' lands as 10.00, like the buy-in), so
+        type integer cents. Also drive the cents slider as a backup so React's value updates."""
+        cents = str(int((amount * 100).to_integral_value()))
+        el = self.page.query_selector(self.sel.raise_amount)
+        if el and self._type_into(el, cents):
+            self._sync_slider(cents)
+            return
+        self._sync_slider(cents)
+
+    def _sync_slider(self, cents: str) -> None:
+        sl = self.page.query_selector(self.sel.raise_slider)
+        if not sl:
+            return
+        try:                                            # set via the native setter so React's onChange fires
+            sl.evaluate(
+                "(n,v)=>{const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;"
+                "s.call(n,v);n.dispatchEvent(new Event('input',{bubbles:true}));"
+                "n.dispatchEvent(new Event('change',{bubbles:true}));}", cents)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _type_into(self, el, text: str) -> bool:
         try:

@@ -57,7 +57,12 @@ class Selectors:
     btn_check: str = ".game-decisions-ctn button.check"
     btn_call: str = ".game-decisions-ctn button.call"
     btn_raise: str = ".game-decisions-ctn button.raise"
-    raise_entry: str = ".entry-raise .entry-ctn"   # custom widget; execute-mode TODO
+    # the bet panel (after clicking RAISE), calibrated live: a cents-entry text box (class 'value',
+    # like the buy-in), a range slider in cents, and a SUBMIT input (not a <button>) to confirm.
+    raise_amount: str = ".game-decisions-ctn input.value, input.value, .game-decisions-ctn input[inputmode='numeric']"
+    raise_slider: str = ".game-decisions-ctn input[type='range'], input.slider-control"
+    raise_confirm: str = ("input[type='submit'].bet, input[type='submit'].action-button, "
+                          ".game-decisions-ctn input[type='submit']")
 
     # --- running log (opened via the LOG/LEDGER button) — entry selector still TBD ---
     show_log_button: str = ".show-log-button"

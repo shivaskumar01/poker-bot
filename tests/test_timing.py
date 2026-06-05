@@ -11,8 +11,8 @@ def _d(action=ActionType.CALL, equity=0.5):
     return NS(action=action, equity=equity, amount=D("0"))
 
 
-def _gs(street=Street.FLOP, to_call=D("2"), stack=D("100")):
-    return NS(street=street, to_call=to_call, hero=NS(stack=stack))
+def _gs(street=Street.FLOP, to_call=D("2"), stack=D("100"), pot=D("6")):
+    return NS(street=street, to_call=to_call, hero=NS(stack=stack), pot=pot)
 
 
 def test_timing_disabled_when_hi_zero():
@@ -35,6 +35,13 @@ def test_timing_produces_snaps_and_tanks_even_on_strong_hands():
               for _ in range(800)]
     assert min(strong) <= 1.0          # snaps occur
     assert max(strong) >= 6.0          # tanks occur
+
+
+def test_bigger_pots_think_longer_on_average():
+    rng = random.Random(3)
+    small = [think_seconds(_d(), _gs(pot=D("4")), rng, lo=1.5, hi=6.0, bb=D("2")) for _ in range(500)]
+    big = [think_seconds(_d(), _gs(pot=D("120")), rng, lo=1.5, hi=6.0, bb=D("2")) for _ in range(500)]
+    assert sum(big) / len(big) > sum(small) / len(small) + 0.5   # big pots are a real think
 
 
 def test_timing_never_exceeds_action_budget():
