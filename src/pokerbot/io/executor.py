@@ -50,36 +50,51 @@ class Executor:
 
     # --- raise/bet: open panel -> set amount -> confirm ---------------------
     def _raise_to(self, amount: Decimal) -> bool:
-        if not self._click(self.sel.btn_raise):        # 1) open the bet panel
-            return False
-        self._wait(450)
+        if not self._panel_open():                     # 1) open the bet panel (skip if a retry left it open)
+            if not self._click(self.sel.btn_raise):
+                return False
+            self._wait(450)
         if not self._raise_dumped:                     # capture the panel once for calibration
             self._raise_dumped = True
             dump_dom(self.page, "after-raise-click")
         self._set_amount(amount)                       # 2) set the amount (cents-entry field)
-        self._wait(250)
+        self._wait(200)
         return self._click_confirm()                   # 3) confirm via the SUBMIT input
 
+    def _panel_open(self) -> bool:
+        try:
+            return bool(self.page.query_selector(self.sel.raise_confirm)
+                        or self.page.query_selector(self.sel.raise_amount))
+        except Exception:  # noqa: BLE001
+            return False
+
     def _click_confirm(self) -> bool:
-        el = self.page.query_selector(self.sel.raise_confirm)   # <input type=submit value="Raise/Bet">
-        if el and el.is_enabled():
-            el.click()
+        if self._click(self.sel.raise_confirm):        # <input type=submit value="Raise/Bet">
             return True
         for sel in (f"{self.sel.action_area} button", ".action-buttons button", "button"):  # other variants
             try:
                 for b in (self.page.query_selector_all(sel) or []):
-                    if b.is_visible() and b.is_enabled() and _CONFIRM_RE.search((b.inner_text() or "").strip()):
-                        b.click()
+                    if b.is_visible() and _CONFIRM_RE.search((b.inner_text() or "").strip()):
+                        b.click(timeout=2000)
                         return True
             except Exception:  # noqa: BLE001
                 pass
         return False
 
     def _click(self, selector: str) -> bool:
-        el = self.page.query_selector(selector)
-        if el and el.is_enabled():
-            el.click()
-            return True
+        """Robust click: a Locator (re-resolves on re-render) with a SHORT timeout so a momentarily
+        un-clickable control never hangs 30s and gets the bot auto-folded; force-clicks through a
+        transient overlay on the second try."""
+        try:
+            loc = self.page.locator(selector).first
+        except Exception:  # noqa: BLE001
+            return False
+        for force in (False, True):
+            try:
+                loc.click(timeout=2000, force=force)
+                return True
+            except Exception:  # noqa: BLE001
+                continue
         return False
 
     def _wait(self, ms: int) -> None:

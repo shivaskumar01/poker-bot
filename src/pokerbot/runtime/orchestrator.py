@@ -166,7 +166,8 @@ class LiveBot:
         print(f"LiveBot: mode={self.config.mode}  execute="
               f"{'ON' if self.executor.can_act else 'OFF (observe only)'}  "
               f"kill-switch=create a file named '{self.config.kill_file}' to stop\n")
-        last = None
+        last = None          # sig we've already decided + thought about
+        pending = None       # decision awaiting a successful click (retried until it lands)
         while True:
             if self.stop_event is not None and self.stop_event.is_set():
                 print("\n== stopped (requested) ==")
@@ -208,7 +209,13 @@ class LiveBot:
                             self.on_decision(gs, d, reads, secs)
                         if self.executor.can_act and not self._needs_rebuy:
                             self._wait_to_act(secs)      # human-paced, but never past the action clock
-                            self.executor.execute(d)
+                            pending = d
+                        else:
+                            pending = None
+                    if pending is not None and self.executor.execute(pending):
+                        pending = None                   # clicked through; else retry next loop
+                else:
+                    pending = None                       # not our turn anymore — drop any stale action
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors
                 print("loop error:", e)
             time.sleep(0.2)
