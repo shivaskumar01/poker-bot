@@ -13,11 +13,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from pokerbot.io.log_parser import parse_file          # noqa: E402
 from pokerbot.opponents.classify import classify        # noqa: E402
 from pokerbot.opponents.store import StatsStore          # noqa: E402
-from pokerbot.opponents.tracking import accumulate, merge_aliases  # noqa: E402
+from pokerbot.opponents.tracking import build_profiles  # noqa: E402
 
 # Real friend-group games only. The "Poker test" logs are bot-vs-self (the seat labeled
 # "vik" there is the user's own account), so they'd corrupt the real opponents' profiles.
-DEFAULT_FOLDERS = [os.path.expanduser("~/Desktop/Poker learning logs")]
+DEFAULT_FOLDERS = [os.path.expanduser("~/Desktop/Poker learning logs"),
+                   os.path.expanduser("~/Desktop/Poker learning logs 2")]
 
 
 def cell(stat) -> str:
@@ -34,16 +35,15 @@ def main() -> None:
         print(f"no CSV logs in {folder!r}")
         return
 
-    stats: dict = {}
-    total = 0
+    all_hands: list = []
     for f in files:
         hands = parse_file(f)
-        for h in hands:
-            accumulate(stats, h)
-        total += len(hands)
-        print(f"  parsed {len(hands):4d} hands  <- {os.path.basename(f)}")
-    stats = merge_aliases(stats)          # one profile per person (nicknames/ids/caps collapsed)
-    print(f"\n{total} hands, {len(stats)} players\n")
+        all_hands += hands
+        hu = sum(1 for h in hands if len(set(h.stacks) or {a.pid for a in h.actions}) == 2)
+        print(f"  parsed {len(hands):4d} hands ({hu:4d} heads-up)  <- {os.path.basename(f)}")
+    stats = build_profiles(all_hands)     # bucket by table size (HU 'name#hu' vs full/short-ring)
+    print(f"\n{len(all_hands)} hands, {len(stats)} profiles "
+          f"({sum(1 for n in stats if n.endswith('#hu'))} heads-up)\n")
 
     hdr = f"{'player':14s} {'hands':>5}  {'VPIP':>9} {'PFR':>9} {'3bet':>9} {'AF':>4}  {'Fc-bet':>9} {'WTSD':>9}  type"
     print(hdr)

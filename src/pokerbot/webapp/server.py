@@ -22,7 +22,7 @@ from ..io.seater import Seater
 from ..io.selectors import Selectors
 from ..opponents.classify import classify
 from ..opponents.store import StatsStore
-from ..opponents.tracking import accumulate, merge_aliases
+from ..opponents.tracking import build_profiles
 from ..runtime.config import load_config
 from ..runtime.orchestrator import LiveBot
 from ..runtime.safety import Limits, SessionGuard
@@ -31,7 +31,8 @@ from ..strategy.timing import tempo_label
 
 HERE = os.path.dirname(__file__)
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))   # repo root (holds config.yaml, data/)
-LEARNING_LOGS = os.path.expanduser("~/Desktop/Poker learning logs")
+LEARNING_DIRS = [os.path.expanduser("~/Desktop/Poker learning logs"),
+                 os.path.expanduser("~/Desktop/Poker learning logs 2")]
 
 
 def _pct(stat) -> str:
@@ -231,17 +232,14 @@ def create_app():
 
     @app.post("/api/analyze")
     def analyze():
-        files = glob.glob(os.path.join(LEARNING_LOGS, "*.csv"))
+        files = [f for d in LEARNING_DIRS for f in glob.glob(os.path.join(d, "*.csv"))]
         if not files:
-            return jsonify({"ok": False, "error": f"no logs in {LEARNING_LOGS}"})
-        stats: dict = {}
-        hands = 0
+            return jsonify({"ok": False, "error": f"no logs in {LEARNING_DIRS}"})
+        all_hands: list = []
         for f in files:
-            parsed = parse_file(f)
-            hands += len(parsed)
-            for h in parsed:
-                accumulate(stats, h)
-        stats = merge_aliases(stats)      # one profile per person (nicknames/ids/caps collapsed)
+            all_hands += parse_file(f)
+        stats = build_profiles(all_hands)   # bucket by table size (HU 'name#hu' vs full/short-ring)
+        hands = len(all_hands)
         db = os.path.join(ROOT, cfg.db_path)
         os.makedirs(os.path.dirname(db), exist_ok=True)
         store = StatsStore(db)

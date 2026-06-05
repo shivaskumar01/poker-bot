@@ -141,9 +141,19 @@ class LiveBot:
     def _reads(self, gs):
         if self.store is None:
             return None
-        # resolve nicknames (e.g. 'Hungry horse' -> bizz) so we pull the right merged profile
-        reads = {o.seat_id: self.store.get(canonical(o.name)) for o in gs.live_opponents if o.name}
+        hu = len(gs.dealt_seats) == 2          # heads-up table -> use HU-only reads (looser baselines)
+        reads = {o.seat_id: self._profile(canonical(o.name), hu)
+                 for o in gs.live_opponents if o.name}
         return reads or None
+
+    def _profile(self, name, hu):
+        """The table-size-appropriate profile: HU games use 'name#hu'; fall back to the other
+        bucket when the right one is too thin (a person plays HU very differently from full ring)."""
+        primary = self.store.get(name + "#hu" if hu else name)
+        if primary.hands >= 15:
+            return primary
+        other = self.store.get(name if hu else name + "#hu")   # cross-bucket fallback
+        return other if other.hands > primary.hands else primary
 
     def _build_state(self, raw):
         cfg = self.config

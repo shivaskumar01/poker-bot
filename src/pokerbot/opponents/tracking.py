@@ -45,6 +45,30 @@ def merge_aliases(stats: dict[str, PlayerStats]) -> dict[str, PlayerStats]:
     return out
 
 
+def _is_heads_up(hand) -> bool:
+    dealt = set(hand.stacks.keys()) or {a.pid for a in hand.actions}
+    return len(dealt) == 2
+
+
+def build_profiles(hands) -> dict[str, PlayerStats]:
+    """Build the opponent store from parsed hands, BUCKETED by table size: a player's heads-up
+    tendencies (you play most buttons) are wildly different from full/short-ring, so HU hands go
+    into a separate 'name#hu' profile (heads_up=True, looser baselines) and 3+-handed hands into
+    the normal 'name' profile. Aliases are merged within each bucket."""
+    multi: dict[str, PlayerStats] = {}
+    hu: dict[str, PlayerStats] = {}
+    for h in hands:
+        accumulate(hu if _is_heads_up(h) else multi, h)
+    out: dict[str, PlayerStats] = {}
+    for ps in merge_aliases(multi).values():
+        out[ps.name] = ps
+    for ps in merge_aliases(hu).values():
+        ps.name = f"{ps.name}#hu"
+        ps.heads_up = True
+        out[ps.name] = ps
+    return out
+
+
 def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
     # one name per pid (from the hand header + every action) so EVERY _get for a pid resolves to
     # the same canonical key — otherwise empty-name calls would split a player into an id-keyed stub

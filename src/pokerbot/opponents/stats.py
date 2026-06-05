@@ -58,6 +58,7 @@ class PlayerStats:
     wtsd: Stat = field(default_factory=Stat)
     agg_actions: int = 0   # postflop bets + raises
     call_actions: int = 0  # postflop calls
+    heads_up: bool = False  # True for a HU-only profile (different baselines than full/short-ring)
 
     def r(self, name: str) -> float:
         """Shrunk rate for a named stat (e.g. 'vpip', 'fold_to_cbet_flop')."""

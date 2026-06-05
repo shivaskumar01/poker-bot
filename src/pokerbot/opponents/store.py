@@ -30,11 +30,12 @@ class StatsStore:
     def get(self, name: str) -> PlayerStats:
         cur = self.conn.execute("SELECT * FROM player_stats WHERE name = ?", (name,))
         row = cur.fetchone()
+        hu = name.endswith("#hu")                 # heads-up-only profile (looser baselines)
         if row is None:
-            return PlayerStats(name=name)
+            return PlayerStats(name=name, heads_up=hu)
         data = dict(zip((d[0] for d in cur.description), row))
         ps = PlayerStats(
-            name=name, hands=data["hands"],
+            name=name, hands=data["hands"], heads_up=hu,
             agg_actions=data["agg_actions"], call_actions=data["call_actions"],
         )
         for f in _STAT_FIELDS:
