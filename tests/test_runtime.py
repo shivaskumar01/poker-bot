@@ -111,18 +111,36 @@ def test_table_check_autodetects_changing_blinds():
     assert status["needs_rebuy"] is False and status["stack"] == "150"
 
 
-def test_bust_then_rebuy_reanchors_bankroll():
+def test_sustained_zero_stack_is_a_bust():
     sc = _TableScraper((D("0.5"), D("1")), D("0"))     # bot is stacked
     g = _guard()
     g.observe_bankroll(D("100"))
     bot = LiveBot(sc, _RecExec(True), None, _cfg("execute", True), g)
-    bot._table_check()
-    assert bot._needs_rebuy is True                    # UI shows the re-buy banner, acting pauses
-    bot.request_rebuy()                                # user tops up at the table + confirms
+    for _ in range(3):
+        bot._table_check()
+        assert bot._needs_rebuy is False               # debounced — not flagged on a brief 0
+    bot._table_check()                                 # 4th sustained 0
+    assert bot._needs_rebuy is True
+    bot.request_rebuy()                                # user tops up + confirms
     sc.stack = D("100")
     bot._table_check()
     assert bot._needs_rebuy is False
     assert g.start == D("100") and g.net_bb == 0.0     # fresh baseline after the second buy-in
+
+
+def test_allin_zero_then_win_is_not_a_bust():
+    # going all-in shows a 0 stack for a moment; winning the pot restores it -> must NOT bust
+    sc = _TableScraper((D("0.5"), D("1")), D("200"))
+    g = _guard()
+    g.observe_bankroll(D("200"))
+    bot = LiveBot(sc, _RecExec(True), None, _cfg("execute", True), g)
+    sc.stack = D("0")
+    bot._table_check(); bot._table_check()             # all-in: stack reads 0 briefly
+    assert bot._needs_rebuy is False                   # not yet (debounced)
+    sc.stack = D("400")                                # won the pot — stacked the opponent
+    bot._table_check()
+    assert bot._needs_rebuy is False                   # decisively not busted
+    assert g.net_bb > 0                                # bankroll reflects the win, not a phantom 0
 
 
 def test_kill_switch(tmp_path):

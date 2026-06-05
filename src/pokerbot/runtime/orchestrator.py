@@ -39,6 +39,7 @@ class LiveBot:
         self._last_check = 0.0
         self._login = None               # lazily-created EmailLogin (persists its inbox)
         self._play_dumps = 0             # dump the first few action-button states (turn calibration)
+        self._zero_reads = 0             # consecutive 0-stack reads (debounce all-in vs real bust)
 
     def request_rebuy(self) -> None:
         """Called from another thread (the UI) — confirms a second buy-in; the bot thread
@@ -57,12 +58,18 @@ class LiveBot:
             if self._rebuy_requested:
                 self._rebuy_requested = False
                 self._needs_rebuy = False
+                self._zero_reads = 0
                 if stack is not None:
                     self.guard.reset_baseline(stack)
-            if stack is not None:
-                self.guard.observe_bankroll(stack)
-                if stack <= 0:
+            if stack is not None and stack > 0:
+                self.guard.observe_bankroll(stack)       # only track bankroll when we actually have chips
+                self._zero_reads = 0
+                self._needs_rebuy = False                # has chips -> NOT busted (clears an all-in false alarm)
+            elif stack is not None:                      # read a 0/negative stack
+                self._zero_reads += 1                    # ... but an all-in shows 0 transiently, so debounce
+                if self._zero_reads >= 4:                # sustained ~8s of 0 => a real bust
                     self._needs_rebuy = True
+            # stack is None -> couldn't read this tick; leave state unchanged
             if self.on_status:
                 self.on_status({
                     "small_blind": str(self.config.small_blind),
