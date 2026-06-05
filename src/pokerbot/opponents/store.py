@@ -58,6 +58,11 @@ class StatsStore:
         )
         self.conn.commit()
 
+    def clear(self) -> None:
+        """Wipe all profiles — used before a full rebuild so stale/renamed rows don't linger."""
+        self.conn.execute("DELETE FROM player_stats")
+        self.conn.commit()
+
     def all_players(self) -> list[PlayerStats]:
         names = [r[0] for r in self.conn.execute("SELECT name FROM player_stats").fetchall()]
         return [self.get(n) for n in names]

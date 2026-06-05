@@ -21,7 +21,7 @@ from ..io.seater import Seater
 from ..io.selectors import Selectors
 from ..opponents.classify import classify
 from ..opponents.store import StatsStore
-from ..opponents.tracking import accumulate
+from ..opponents.tracking import accumulate, merge_aliases
 from ..runtime.config import load_config
 from ..runtime.orchestrator import LiveBot
 from ..runtime.safety import Limits, SessionGuard
@@ -238,9 +238,11 @@ def create_app():
             hands += len(parsed)
             for h in parsed:
                 accumulate(stats, h)
+        stats = merge_aliases(stats)      # one profile per person (nicknames/ids/caps collapsed)
         db = os.path.join(ROOT, cfg.db_path)
         os.makedirs(os.path.dirname(db), exist_ok=True)
         store = StatsStore(db)
+        store.clear()                     # full rebuild — drop stale/renamed rows first
         for ps in stats.values():
             store.save(ps)
         store.close()

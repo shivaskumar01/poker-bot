@@ -13,6 +13,7 @@ from ..io.domdump import dump_dom
 from ..io.prompts import EmailLogin
 from ..io.scraper import reconstruct_preflop, to_game_state
 from ..model.state import Action, ActionType, Street
+from ..opponents.aliases import canonical
 from ..opponents.classify import classify
 from ..strategy.engine import decide, primary_villain_read
 from ..strategy.timing import tempo_label, think_seconds
@@ -140,7 +141,8 @@ class LiveBot:
     def _reads(self, gs):
         if self.store is None:
             return None
-        reads = {o.seat_id: self.store.get(o.name) for o in gs.live_opponents if o.name}
+        # resolve nicknames (e.g. 'Hungry horse' -> bizz) so we pull the right merged profile
+        reads = {o.seat_id: self.store.get(canonical(o.name)) for o in gs.live_opponents if o.name}
         return reads or None
 
     def _build_state(self, raw):

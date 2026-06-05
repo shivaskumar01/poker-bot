@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from pokerbot.io.log_parser import parse_file          # noqa: E402
 from pokerbot.opponents.classify import classify        # noqa: E402
 from pokerbot.opponents.store import StatsStore          # noqa: E402
-from pokerbot.opponents.tracking import accumulate       # noqa: E402
+from pokerbot.opponents.tracking import accumulate, merge_aliases  # noqa: E402
 
 # Real friend-group games only. The "Poker test" logs are bot-vs-self (the seat labeled
 # "vik" there is the user's own account), so they'd corrupt the real opponents' profiles.
@@ -42,6 +42,7 @@ def main() -> None:
             accumulate(stats, h)
         total += len(hands)
         print(f"  parsed {len(hands):4d} hands  <- {os.path.basename(f)}")
+    stats = merge_aliases(stats)          # one profile per person (nicknames/ids/caps collapsed)
     print(f"\n{total} hands, {len(stats)} players\n")
 
     hdr = f"{'player':14s} {'hands':>5}  {'VPIP':>9} {'PFR':>9} {'3bet':>9} {'AF':>4}  {'Fc-bet':>9} {'WTSD':>9}  type"
@@ -55,6 +56,7 @@ def main() -> None:
     db_dir = os.path.join(os.path.dirname(__file__), "..", "data")
     os.makedirs(db_dir, exist_ok=True)
     store = StatsStore(os.path.join(db_dir, "opponents.sqlite"))
+    store.clear()                         # full rebuild — drop stale/renamed rows first
     for ps in stats.values():
         store.save(ps)
     store.close()

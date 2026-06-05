@@ -7,7 +7,10 @@ the PokerNow log parser, the live scraper, and the self-play harness.
 """
 from __future__ import annotations
 
+from .aliases import canonical
 from .stats import PlayerStats
+
+_STAT_FIELDS = ["vpip", "pfr", "threebet", "fold_to_3bet", "cbet_flop", "fold_to_cbet_flop", "wtsd"]
 
 
 def _get(stats: dict[str, PlayerStats], pid: str, name: str) -> PlayerStats:
@@ -20,10 +23,42 @@ def _get(stats: dict[str, PlayerStats], pid: str, name: str) -> PlayerStats:
     return ps
 
 
+def merge_aliases(stats: dict[str, PlayerStats]) -> dict[str, PlayerStats]:
+    """Combine id-keyed stats into one entry per CANONICAL name, so a person who sits under a
+    different nickname/id (e.g. 'Hungry horse' = bizz) or capitalization keeps a single profile.
+    Returns a dict keyed by canonical name. Use this once, just before persisting."""
+    out: dict[str, PlayerStats] = {}
+    for ps in stats.values():
+        key = canonical(ps.name) or ps.name
+        cur = out.get(key)
+        if cur is None:
+            ps.name = key
+            out[key] = ps
+            continue
+        cur.hands += ps.hands
+        cur.agg_actions += ps.agg_actions
+        cur.call_actions += ps.call_actions
+        for f in _STAT_FIELDS:
+            d, s = getattr(cur, f), getattr(ps, f)
+            d.made += s.made
+            d.opp += s.opp
+    return out
+
+
 def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
+    # one name per pid (from the hand header + every action) so EVERY _get for a pid resolves to
+    # the same canonical key — otherwise empty-name calls would split a player into an id-keyed stub
+    names = dict(hand.names or {})
+    for a in hand.actions:
+        if a.pid and a.name:
+            names.setdefault(a.pid, a.name)
+
+    def g(pid):
+        return _get(stats, pid, names.get(pid, ""))
+
     dealt = list(hand.stacks.keys()) or list({a.pid for a in hand.actions})
     for pid in dealt:
-        _get(stats, pid, hand.names.get(pid, "")).hands += 1
+        g(pid).hands += 1
 
     # --- preflop: vpip / pfr / 3bet / fold-to-3bet ---
     pre = [a for a in hand.actions if a.street == "preflop"]
@@ -37,9 +72,9 @@ def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
         if a.kind in ("sb", "bb", "post"):
             continue
         if raises == 1 and a.pid != opener and a.kind in ("call", "raise", "fold"):
-            _get(stats, a.pid, a.name).threebet.observe(a.kind == "raise")
+            g(a.pid).threebet.observe(a.kind == "raise")
         if a.pid == opener and raises >= 2 and a.kind in ("fold", "call", "raise"):
-            _get(stats, a.pid, a.name).fold_to_3bet.observe(a.kind == "fold")
+            g(a.pid).fold_to_3bet.observe(a.kind == "fold")
         if a.kind in ("call", "raise"):
             vpip.add(a.pid)
         if a.kind == "raise":
@@ -51,7 +86,7 @@ def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
         elif a.kind == "fold":
             folded_pre.add(a.pid)
     for pid in dealt:
-        ps = _get(stats, pid, hand.names.get(pid, ""))
+        ps = g(pid)
         ps.vpip.observe(pid in vpip)
         ps.pfr.observe(pid in pfr)
 
@@ -61,20 +96,20 @@ def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
     flop = [a for a in hand.actions if a.street == "flop"]
     if pf_aggressor is not None and pf_aggressor in saw_flop and flop:
         first_aggr = next((a.pid for a in flop if a.kind in ("bet", "raise")), None)
-        _get(stats, pf_aggressor, "").cbet_flop.observe(first_aggr == pf_aggressor)
+        g(pf_aggressor).cbet_flop.observe(first_aggr == pf_aggressor)
         if first_aggr == pf_aggressor:
             idx = next(i for i, a in enumerate(flop)
                        if a.kind in ("bet", "raise") and a.pid == pf_aggressor)
             responded: set[str] = set()
             for a in flop[idx + 1:]:
                 if a.pid != pf_aggressor and a.pid not in responded and a.kind in ("fold", "call", "raise"):
-                    _get(stats, a.pid, a.name).fold_to_cbet_flop.observe(a.kind == "fold")
+                    g(a.pid).fold_to_cbet_flop.observe(a.kind == "fold")
                     responded.add(a.pid)
 
     # --- postflop aggression factor ---
     for a in hand.actions:
         if a.street in ("flop", "turn", "river"):
-            ps = _get(stats, a.pid, a.name)
+            ps = g(a.pid)
             if a.kind in ("bet", "raise"):
                 ps.agg_actions += 1
             elif a.kind == "call":
@@ -84,6 +119,6 @@ def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
     folded_all = {a.pid for a in hand.actions if a.kind == "fold"}
     reached_showdown = len(set(dealt) - folded_all) >= 2
     for pid in saw_flop:
-        _get(stats, pid, "").wtsd.observe(reached_showdown and pid not in folded_all)
+        g(pid).wtsd.observe(reached_showdown and pid not in folded_all)
 
     return stats
