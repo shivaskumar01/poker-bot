@@ -27,6 +27,7 @@ class Executor:
         self.mode = mode
         self.players_consent = players_consent
         self._raise_dumped = False
+        self._set_dumped = False
 
     @property
     def can_act(self) -> bool:
@@ -103,27 +104,63 @@ class Executor:
         except Exception:  # noqa: BLE001
             pass
 
-    def _set_amount(self, amount: Decimal) -> None:
-        """The bet box is a CENTS-entry field (typing '1000' lands as 10.00, like the buy-in), so
-        type integer cents. Also drive the cents slider as a backup so React's value updates."""
-        cents = str(int((amount * 100).to_integral_value()))
-        el = self.page.query_selector(self.sel.raise_amount)
-        if el and self._type_into(el, cents):
-            self._sync_slider(cents)
-            return
-        self._sync_slider(cents)
+    _NATIVE_SET = ("(n,v)=>{const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')"
+                   ".set;s.call(n,v);n.dispatchEvent(new Event('input',{bubbles:true}));"
+                   "n.dispatchEvent(new Event('change',{bubbles:true}));}")
 
-    def _sync_slider(self, cents: str) -> None:
-        sl = self.page.query_selector(self.sel.raise_slider)
-        if not sl:
-            return
-        try:                                            # set via the native setter so React's onChange fires
-            sl.evaluate(
-                "(n,v)=>{const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;"
-                "s.call(n,v);n.dispatchEvent(new Event('input',{bubbles:true}));"
-                "n.dispatchEvent(new Event('change',{bubbles:true}));}", cents)
+    def _set_amount(self, amount: Decimal) -> None:
+        """Set the raise-to amount RELIABLY, then VERIFY the box reads it before we confirm — the
+        bet field's input mode is finicky (cents-entry vs decimal-entry), so try methods in order
+        and stop as soon as the box shows the right number."""
+        target = float(amount)
+        cents = str(int((amount * 100).to_integral_value()))   # 100.00 -> '10000' (cents keypad)
+        dec = f"{amount:.2f}"                                   # '100.00' (decimal form)
+        strategies = (
+            ("slider-cents", lambda: self._native(self.sel.raise_slider, cents)),
+            ("type-cents", lambda: self._type_into(self.page.query_selector(self.sel.raise_amount), cents)),
+            ("native-decimal", lambda: self._native(self.sel.raise_amount, dec)),
+            ("native-cents", lambda: self._native(self.sel.raise_amount, cents)),
+        )
+        used = "none"
+        for name, fn in strategies:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                continue
+            self._wait(120)
+            if self._amount_is(target):
+                used = name
+                break
+        if not self._set_dumped:                               # one-time calibration snapshot
+            self._set_dumped = True
+            dump_dom(self.page, f"after-set-amount target={dec} got={self._amount_str()!r} via={used}")
+
+    def _native(self, selector: str, value: str) -> None:
+        el = self.page.query_selector(selector)
+        if el:
+            el.evaluate(self._NATIVE_SET, value)
+
+    def _amount_str(self) -> str:
+        el = self.page.query_selector(self.sel.raise_amount)
+        if not el:
+            return ""
+        try:
+            return el.input_value() or el.get_attribute("value") or ""
         except Exception:  # noqa: BLE001
-            pass
+            try:
+                return el.get_attribute("value") or ""
+            except Exception:  # noqa: BLE001
+                return ""
+
+    def _amount_is(self, target: float) -> bool:
+        m = re.search(r"[\d.]+", self._amount_str().replace(",", ""))
+        if not m:
+            return False
+        try:
+            val = float(m.group(0))
+        except ValueError:
+            return False
+        return abs(val - target) <= max(0.25, target * 0.02)   # within a chip / 2%
 
     def _type_into(self, el, text: str) -> bool:
         try:

@@ -56,7 +56,8 @@
   th:first-child,td:first-child{ text-align:left; }
   .tag{ font-size:11px; padding:2px 7px; border-radius:999px; background:#0d1411; border:1px solid var(--line); }
   .tag.maniac,.tag.lag{ color:var(--red); } .tag.station{ color:var(--gold); } .tag.nit,.tag.tag{ color:var(--blue); }
-  #log{ font:12px/1.5 ui-monospace,Menlo,monospace; color:var(--muted); max-height:240px; overflow:auto; white-space:pre-wrap; }
+  #log{ font:12px/1.5 ui-monospace,Menlo,monospace; color:var(--muted); max-height:420px; overflow:auto; white-space:pre-wrap; }
+  #logsum b.up{ color:var(--green); } #logsum b.down{ color:var(--red); }
   .hint{ font-size:11.5px; color:var(--muted); margin-top:10px; }
 </style>
 </head>
@@ -138,7 +139,7 @@
         <tbody id="profiles"><tr><td colspan="6" style="color:var(--muted)">no profiles yet</td></tr></tbody></table>
     </div>
     <div class="panel" style="margin-top:16px">
-      <h2>Decision log</h2>
+      <h2>Game log <span id="logsum" style="float:right;text-transform:none;letter-spacing:0;color:var(--muted)">—</span></h2>
       <div id="log">—</div>
     </div>
   </div>
@@ -190,6 +191,8 @@ async function poll(){
       }
     }
     $('log').textContent = (s.log&&s.log.length)? s.log.join('\n') : '—';
+    const net=s.session.net_bb||0; const cls=net>0?'up':(net<0?'down':'');
+    $('logsum').innerHTML = `${s.session.hands} hands · <b class="${cls}">${net>=0?'+':''}${net} bb</b>`;
   }catch(e){ /* server momentarily busy */ }
 }
 async function loadProfiles(){

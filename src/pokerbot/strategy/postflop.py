@@ -117,6 +117,9 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
 
     if gs.to_call > 0:                                  # ---- facing a bet ----
         required = exploit.adj_call_required(gs.pot_odds, read)
+        potf = float(gs.pot)                            # read the bet SIZE (big bets = bluffy here)
+        bet_fraction = float(gs.to_call) / potf if potf > 0 else 1.0
+        required = max(0.05, min(0.85, required + exploit.bet_size_delta(bet_fraction, read)))
         call_amt = min(gs.to_call, hero.stack)
         if raise_ok and strong_for_raise and eq >= RAISE_EQ:
             if mx.chance(0.25):                         # mix a trap with the nuts-ish
