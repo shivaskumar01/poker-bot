@@ -38,7 +38,7 @@ class LiveBot:
         self._rebuy_requested = False
         self._last_check = 0.0
         self._login = None               # lazily-created EmailLogin (persists its inbox)
-        self._turn_dumped = False        # dump the DOM once on the first turn (to read the timer)
+        self._play_dumps = 0             # dump the first few action-button states (turn calibration)
 
     def request_rebuy(self) -> None:
         """Called from another thread (the UI) — confirms a second buy-in; the bot thread
@@ -186,12 +186,12 @@ class LiveBot:
                 self._last_check = now
                 self._table_check()
             try:
+                if self.scraper.action_buttons_present() and self._play_dumps < 8:
+                    self._play_dumps += 1                  # calibrate turn-detection (seat classes etc.)
+                    page = getattr(self.scraper, "page", None)
+                    if page is not None:
+                        dump_dom(page, f"buttons-present is_hero_turn={self.scraper.is_hero_turn()}")
                 if self.scraper.is_hero_turn():
-                    if not self._turn_dumped:               # one-time: capture the action-timer DOM
-                        self._turn_dumped = True
-                        page = getattr(self.scraper, "page", None)
-                        if page is not None:
-                            dump_dom(page, "hero-turn")
                     raw = self.scraper.read_observation()
                     gs = self._build_state(raw)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),

@@ -46,6 +46,14 @@ def _render(page, tag: str) -> str:
             lines.append(f"  BUTTONS: {btns}")
         except Exception:  # noqa: BLE001
             pass
+        try:                                            # seat classes reveal who the current actor is
+            for el in (fr.query_selector_all(".table-player") or []):
+                cls = el.get_attribute("class") or ""
+                if "table-player-seat" in cls and "you-player" not in cls:
+                    continue                            # skip empty seats
+                lines.append(f"  SEAT class={cls!r}")
+        except Exception:  # noqa: BLE001
+            pass
     lines.append("===== END DOM =====")
     return "\n".join(lines)
 

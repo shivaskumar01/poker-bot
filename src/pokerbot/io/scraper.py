@@ -175,9 +175,33 @@ class Scraper:
         self.sel = selectors
         self.hero_name = hero_name
 
-    def is_hero_turn(self) -> bool:
+    def action_buttons_present(self) -> bool:
+        """Any fold/check/call/raise control is on screen — but this ALSO matches the pre-action
+        controls PokerNow shows during the OPPONENT's turn, so it is NOT 'is it my turn'."""
         return any(self.page.query_selector(s) for s in
                    (self.sel.btn_fold, self.sel.btn_check, self.sel.btn_call, self.sel.btn_raise))
+
+    def _hero_is_current_actor(self) -> bool:
+        cur = self.sel.current_actor_class
+        return bool(self.page.query_selector(f".you-player.{cur}")
+                    or self.page.query_selector(f".you-player .{cur}")
+                    or self.page.query_selector(f".{cur} .you-player"))
+
+    def is_hero_turn(self) -> bool:
+        """True ONLY when it is genuinely the hero's turn to act — not when PokerNow is merely
+        showing pre-action ('check/fold ahead') controls during the opponent's turn. PokerNow marks
+        the real turn with a 'YOUR TURN' label in the action area and makes the hero the current
+        actor; require one of those plus an actual action button."""
+        if not self.action_buttons_present():
+            return False
+        area = self.page.query_selector(self.sel.action_area)
+        if area is not None:
+            try:
+                if "YOUR TURN" in (area.inner_text() or "").upper():
+                    return True
+            except Exception:  # noqa: BLE001
+                pass
+        return self._hero_is_current_actor()
 
     def _to_call_text(self) -> str:
         # PokerNow labels the call-classed button "CALL <amt>" ONLY when facing a bet; when a
