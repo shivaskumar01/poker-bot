@@ -36,15 +36,16 @@ def think_seconds(decision, gs, rng: random.Random, *, lo: float = 1.5, hi: floa
         cap = max(0.3, min(cap, max_wait))
     pot_bb = _pot_bb(gs, bb)
 
-    # pot size is the main driver — small pots snappy, big pots a real think
-    t = 0.5 + rng.random() * 0.6                         # base reaction
-    t += min(hi * 1.1, 0.4 + pot_bb * 0.10)             # ~ +0.1s per bb in the pot (capped)
-    t += _STREET_W.get(gs.street, 0.5)                  # later streets a touch more
+    # pot size is the main driver — small pots snappy, big pots a real think (kept compact so it
+    # always fits the action clock; the budget cap is the hard ceiling)
+    t = 0.35 + rng.random() * 0.45                       # base reaction
+    t += min(hi * 0.7, 0.25 + pot_bb * 0.06)            # ~ +0.06s per bb in the pot (capped)
+    t += _STREET_W.get(gs.street, 0.4) * 0.7            # later streets a touch more
     if gs.to_call is not None and gs.to_call > 0:
-        t += 0.5                                          # facing a bet
+        t += 0.35                                         # facing a bet
     if decision.equity is not None:                     # close/marginal spots take longer
-        t += (1.0 - min(1.0, abs(decision.equity - 0.5) / 0.5)) * 0.9
-    t *= 0.8 + rng.random() * 0.5                        # human variance
+        t += (1.0 - min(1.0, abs(decision.equity - 0.5) / 0.5)) * 0.7
+    t *= 0.8 + rng.random() * 0.45                       # human variance
 
     # occasional tank / snap, biased by pot size (a big-pot tank, a small-pot snap)
     tank = round(min(rng.uniform(min(hi, cap), cap), cap), 1)

@@ -160,10 +160,9 @@ class EmailLogin:
         return " ".join(parts).lower()
 
     def _gate(self, page, sel) -> bool:
-        if self._all_visible(page, sel.email_input) or self._all_visible(page, sel.code_input):
-            return True
-        t = self._text(page)
-        return bool(_CODE_SCREEN.search(t) or _EMAIL_SCREEN.search(t))
+        # input-presence only — cheap enough to call every loop tick (no full-page inner_text scan,
+        # which was ~100ms of hot-loop waste each time). The login screens always carry their input.
+        return bool(self._all_visible(page, sel.email_input) or self._all_visible(page, sel.code_input))
 
     def _inputs(self, page):
         return [el for el in self._all_visible(page, "input, textarea") if _type_of(el) not in _SKIP_TYPES]

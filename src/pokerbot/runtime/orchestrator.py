@@ -111,19 +111,23 @@ class LiveBot:
     def _wait_to_act(self, secs: float) -> None:
         """Sleep up to `secs`, but bail the moment the action timer is about to expire (or Stop)."""
         end = time.time() + max(0.0, float(secs))
+        check_timer = True
         while True:
             remaining = end - time.time()
             if remaining <= 0:
                 return
             if self.stop_event is not None and self.stop_event.is_set():
                 return
-            try:
-                left = self.scraper.read_seconds_left()
-            except Exception:  # noqa: BLE001
-                left = None
-            if left is not None and left <= _ACTION_SAFETY:
-                return                                  # clock almost out — act NOW
-            time.sleep(min(0.25, remaining))
+            if check_timer:
+                try:
+                    left = self.scraper.read_seconds_left()
+                except Exception:  # noqa: BLE001
+                    left = None
+                if left is None:
+                    check_timer = False                 # unreadable on this table — stop polling it
+                elif left <= _ACTION_SAFETY:
+                    return                               # clock almost out — act NOW
+            time.sleep(min(0.3, remaining))
 
     # --- helpers ---
     def _reads(self, gs):
@@ -218,7 +222,7 @@ class LiveBot:
                     pending = None                       # not our turn anymore — drop any stale action
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors
                 print("loop error:", e)
-            time.sleep(0.2)
+            time.sleep(0.1)         # fast poll so the bot detects its turn quickly on fast tables
 
     # --- output ---
     def _announce(self, gs, d, reads, secs=None) -> None:

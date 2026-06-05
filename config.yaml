@@ -28,8 +28,9 @@ engine:
 timing:                    # server-courtesy / realistic pacing for a DISCLOSED bot (not stealth)
   min_think_seconds: 1.5
   max_think_seconds: 6.0
-  max_action_wait_seconds: 6.0   # NEVER think longer than this if the table's action timer is unknown
-                                 # (the bot also reads the live countdown and acts before it expires)
+  max_action_wait_seconds: 4.0   # NEVER think longer than this if the table's action timer is unknown
+                                 # (kept tight so a fast table can't auto-fold the bot; it also reads
+                                 #  the live countdown and acts before it expires)
 
 opponents:
   db_path: data/opponents.sqlite
