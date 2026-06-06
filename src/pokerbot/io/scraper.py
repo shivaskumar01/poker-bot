@@ -181,27 +181,13 @@ class Scraper:
         return any(self.page.query_selector(s) for s in
                    (self.sel.btn_fold, self.sel.btn_check, self.sel.btn_call, self.sel.btn_raise))
 
-    def _hero_is_current_actor(self) -> bool:
-        cur = self.sel.current_actor_class
-        return bool(self.page.query_selector(f".you-player.{cur}")
-                    or self.page.query_selector(f".you-player .{cur}")
-                    or self.page.query_selector(f".{cur} .you-player"))
-
     def is_hero_turn(self) -> bool:
-        """True ONLY when it is genuinely the hero's turn to act — not when PokerNow is merely
-        showing pre-action ('check/fold ahead') controls during the opponent's turn. PokerNow marks
-        the real turn with a 'YOUR TURN' label in the action area and makes the hero the current
-        actor; require one of those plus an actual action button."""
-        if not self.action_buttons_present():
-            return False
-        area = self.page.query_selector(self.sel.action_area)
-        if area is not None:
-            try:
-                if "YOUR TURN" in (area.inner_text() or "").upper():
-                    return True
-            except Exception:  # noqa: BLE001
-                pass
-        return self._hero_is_current_actor()
+        """CHEAP + reliable: it's the hero's turn iff the hero's seat is the CURRENT ACTOR — the
+        seat with `.decision-current`. During the opponent's turn THEIR seat carries it and the hero
+        only sees pre-action ('Check/Fold ahead') controls, so this single class check (no per-loop
+        button scan or inner_text read) is all that's needed and keeps the poll loop light. The bot
+        therefore does NO hand work until it's genuinely its turn."""
+        return self.page.query_selector(f".you-player.{self.sel.current_actor_class}") is not None
 
     def _to_call_text(self) -> str:
         # PokerNow labels the call-classed button "CALL <amt>" ONLY when facing a bet; when a

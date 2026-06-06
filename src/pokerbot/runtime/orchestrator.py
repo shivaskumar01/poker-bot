@@ -205,8 +205,8 @@ class LiveBot:
                 self._last_check = now
                 self._table_check()
             try:
-                if self.scraper.action_buttons_present() and self._play_dumps < 8:
-                    self._play_dumps += 1                  # calibrate turn-detection (seat classes etc.)
+                if self._play_dumps < 6 and self.scraper.action_buttons_present():
+                    self._play_dumps += 1                  # calibrate turn-detection (cheap counter gates it off)
                     page = getattr(self.scraper, "page", None)
                     if page is not None:
                         dump_dom(page, f"buttons-present is_hero_turn={self.scraper.is_hero_turn()}")
