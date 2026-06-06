@@ -50,25 +50,30 @@ class Executor:
         if a in (ActionType.BET, ActionType.RAISE):
             if self._raise_to(decision.amount):
                 return True
-            # no raise control on screen (e.g. facing an all-in jam — only call/fold) -> CALL is the
-            # closest legal action, so we don't get stuck retrying a raise that can't happen.
-            if self.page.query_selector(self.sel.btn_raise) is None:
-                return self._click(self.sel.btn_call) or self._click(self.sel.btn_check)
-            return False
+            # Couldn't open/size the bet -> NEVER confirm a min bet. A BET is checkable, so CHECK;
+            # a RAISE faces a bet (incl. an all-in jam), so CALL. Either is far better than min-betting.
+            if a == ActionType.BET:
+                return self._click(self.sel.btn_check)
+            return self._click(self.sel.btn_call)
         return False
 
-    # --- raise/bet: open panel -> set amount -> confirm ---------------------
+    # --- raise/bet: open panel -> set amount (VERIFIED) -> confirm ----------
     def _raise_to(self, amount: Decimal) -> bool:
-        if not self._panel_open():                     # 1) open the bet panel (skip if a retry left it open)
-            if not self._click(self.sel.btn_raise):
-                return False
-            self._await_panel()                        # WAIT for the amount field to render (not a fixed delay)
-        if not self._raise_dumped:                     # capture the panel once for calibration
-            self._raise_dumped = True
-            dump_dom(self.page, "after-raise-click")
-        self._set_amount(amount)                       # 2) set the amount (cents-entry field)
-        self._wait(130)
-        return self._click_confirm()                   # 3) confirm via the SUBMIT input
+        """Confirm ONLY a verified amount. Retries the whole open->size->confirm a few times; if it
+        can never set a sane amount it returns False (the caller checks/calls) — it NEVER confirms
+        the panel's default min bet. This is the fix for the recurring 'said 200, bet 5' leak."""
+        for _ in range(3):
+            if not self._panel_open():                 # open the bet panel (skip if a retry left it open)
+                if not self._click(self.sel.btn_raise):
+                    return False                       # no raise control at all (e.g. facing a jam)
+                self._await_panel()                    # WAIT for the amount field to actually render
+            if not self._raise_dumped:
+                self._raise_dumped = True
+                dump_dom(self.page, "after-raise-click")
+            if self._set_amount(amount) and self._click_confirm():   # set+VERIFY, then confirm
+                return True
+            self._wait(160)                            # settle, then retry the open/size
+        return False
 
     def _await_panel(self) -> None:
         """Block until the bet panel's amount field is actually on screen — a fixed delay was
@@ -79,17 +84,27 @@ class Executor:
             self._wait(300)
         self._wait(100)
 
-    def _click_preset(self) -> bool:
-        """Last-resort clean size when the exact amount won't set — click the ¾-pot preset button
-        (a sane, non-min bet) rather than ever confirming a wrong/min amount."""
+    def _click_label(self, pattern: str) -> bool:
+        rx = re.compile(pattern, re.I)
         for b in (self.page.query_selector_all(f"{self.sel.action_area} button, button") or []):
             try:
-                if b.is_visible() and re.search(r"3/4\s*pot|^\s*pot\s*$", (b.inner_text() or "").strip(), re.I):
+                if b.is_visible() and rx.search((b.inner_text() or "").strip()):
                     b.click(timeout=1500)
                     return True
             except Exception:  # noqa: BLE001
                 pass
         return False
+
+    def _preset_near(self, target: float) -> str:
+        """Clean POT-relative preset that lands a SANE (>= ~1/3 of target) amount — a real bet, never
+        the min default. Tries ¾-pot, then pot, then all-in, and verifies each landed in the ballpark."""
+        for label, rx in (("3/4-pot", r"3/4\s*pot"), ("pot", r"^\s*pot\s*$"), ("all-in", r"all[\s-]?in")):
+            if self._click_label(rx):
+                self._wait(100)
+                got = self._amount_value()
+                if got is not None and got >= 0.35 * target:
+                    return label
+        return "none"
 
     def activate_extra_time(self) -> bool:
         """Click PokerNow's 'ACTIVATE EXTRA TIME' to buy clock on a big decision (no-op once used
@@ -150,10 +165,10 @@ class Executor:
                    ".set;s.call(n,v);n.dispatchEvent(new Event('input',{bubbles:true}));"
                    "n.dispatchEvent(new Event('change',{bubbles:true}));}")
 
-    def _set_amount(self, amount: Decimal) -> None:
-        """Set the raise-to amount RELIABLY, then VERIFY the box reads it before we confirm — the
-        bet field's input mode is finicky (cents-entry vs decimal-entry), so try methods in order
-        and stop as soon as the box shows the right number."""
+    def _set_amount(self, amount: Decimal) -> bool:
+        """Set the bet amount and VERIFY the box reads it. Returns True ONLY if a sane amount is
+        confirmed (an exact set, or a clean preset in the ballpark) — so the caller will never
+        confirm the panel's default min bet."""
         target = float(amount)
         cents = str(int((amount * 100).to_integral_value()))   # 100.00 -> '10000' (cents keypad)
         dec = f"{amount:.2f}"                                   # '100.00' (decimal form)
@@ -169,15 +184,16 @@ class Executor:
                 fn()
             except Exception:  # noqa: BLE001
                 continue
-            self._wait(100)
-            if self._amount_is(target):
+            self._wait(90)
+            if self._amount_is(target):                        # exact match within ~2%
                 used = name
                 break
-        if used == "none" and self._click_preset():            # couldn't set exact -> clean ¾-pot, never a min bet
-            used = "preset-3/4"
+        if used == "none":                                     # exact set failed -> clean preset (never min)
+            used = self._preset_near(target)
         if not self._set_dumped:                               # one-time calibration snapshot
             self._set_dumped = True
             dump_dom(self.page, f"after-set-amount target={dec} got={self._amount_str()!r} via={used}")
+        return used != "none"
 
     def _native(self, selector: str, value: str) -> None:
         el = self.page.query_selector(selector)
@@ -196,15 +212,18 @@ class Executor:
             except Exception:  # noqa: BLE001
                 return ""
 
-    def _amount_is(self, target: float) -> bool:
+    def _amount_value(self) -> float | None:
         m = re.search(r"[\d.]+", self._amount_str().replace(",", ""))
         if not m:
-            return False
+            return None
         try:
-            val = float(m.group(0))
+            return float(m.group(0))
         except ValueError:
-            return False
-        return abs(val - target) <= max(0.25, target * 0.02)   # within a chip / 2%
+            return None
+
+    def _amount_is(self, target: float) -> bool:
+        v = self._amount_value()
+        return v is not None and abs(v - target) <= max(0.25, target * 0.02)   # within a chip / 2%
 
     def _type_into(self, el, text: str) -> bool:
         try:
