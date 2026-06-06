@@ -228,7 +228,7 @@ class LiveBot:
                         if big_pot and self.executor.can_act and not self._needs_rebuy:
                             self.executor.activate_extra_time()   # any big-pot decision (incl. a jam-call): buy clock
                         if d.action in (ActionType.BET, ActionType.RAISE):
-                            budget = max(0.6, budget - 2.0)       # reserve time for the multi-step bet panel
+                            budget = max(0.5, budget - 1.5)       # reserve time for the multi-step bet panel
                         secs = think_seconds(d, gs, self.rng, lo=self.config.min_think,
                                              hi=self.config.max_think, bb=self.config.big_blind,
                                              max_wait=budget)
@@ -238,7 +238,10 @@ class LiveBot:
                             self.on_decision(gs, d, reads, secs)
                         if self.executor.can_act and not self._needs_rebuy:
                             self._wait_to_act(secs)      # human-paced, but never past the action clock
-                            pending = d
+                            if self.scraper.is_hero_turn():
+                                pending = d              # STILL our turn after the think -> act
+                            else:
+                                pending, last = None, None   # turn passed during the think -> re-read fresh
                         else:
                             pending = None
                     if pending is not None and self.executor.execute(pending):

@@ -27,15 +27,18 @@ class _Loc:
 
 
 class _Page:
-    def __init__(self, has_check=True, has_call=True):
+    def __init__(self, has_check=True, has_call=True, my_turn=True):
         self.clicked = []
         self.has_check = has_check
         self.has_call = has_call
+        self.my_turn = my_turn
 
     def locator(self, sel):
         return _Loc(sel, self)
 
     def query_selector(self, sel):
+        if "decision-current" in sel:                # the hero-is-current-actor turn check
+            return object() if self.my_turn else None
         return None
 
 
@@ -59,6 +62,15 @@ def test_call_clicks_call():
     page = _Page(has_check=True, has_call=True)
     assert _ex(page).execute(Decision(ActionType.CALL, D("2"), "call")) is True
     assert page.clicked == ["call"]
+
+
+def test_does_not_act_when_not_heros_turn():
+    # the one-street-lag bug: if the turn already passed, the on-screen controls are PRE-ACTION
+    # (queued for next turn). The executor must click NOTHING when it isn't the current actor.
+    page = _Page(my_turn=False)
+    assert _ex(page).execute(Decision(ActionType.BET, D("90"), "bet")) is False
+    assert _ex(page).execute(Decision(ActionType.CHECK, D("0"), "check")) is False
+    assert page.clicked == []
 
 
 # --- bet panel: never confirm an unverified (min) amount ---------------------
@@ -154,6 +166,8 @@ class _BetPage:
         return _BetLoc(sel, self)
 
     def query_selector(self, sel):
+        if "decision-current" in sel:
+            return _BetEl("turn", self)              # it's the hero's turn in these tests
         if "submit" in sel:
             return _BetEl("confirm", self) if self.panel_open else None
         if "value" in sel or "inputmode" in sel or "slider" in sel or "range" in sel:

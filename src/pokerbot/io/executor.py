@@ -33,10 +33,22 @@ class Executor:
     def can_act(self) -> bool:
         return self.mode == "execute" and self.players_consent
 
+    def _is_hero_turn(self) -> bool:
+        """The hero is the CURRENT ACTOR (their seat has .decision-current)."""
+        try:
+            return self.page.query_selector(f".you-player.{self.sel.current_actor_class}") is not None
+        except Exception:  # noqa: BLE001
+            return False
+
     def execute(self, decision: Decision) -> bool:
-        """Perform the action. Returns False (touching nothing) if unauthorized or the control
-        isn't found."""
+        """Perform the action. Returns False (touching nothing) if unauthorized, not actually the
+        hero's turn, or the control isn't found."""
         if not self.can_act:
+            return False
+        if not self._is_hero_turn():
+            # CRITICAL: only ever click while it's genuinely our turn. If the turn already passed
+            # (slow think / a long bet sequence), the on-screen controls are PRE-ACTION ('check/fold
+            # ahead') that PokerNow QUEUES for next turn -> the bot would act one street behind.
             return False
         a = decision.action
         if a == ActionType.FOLD:
