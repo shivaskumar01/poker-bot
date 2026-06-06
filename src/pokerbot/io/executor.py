@@ -42,9 +42,11 @@ class Executor:
         if a == ActionType.FOLD:
             return self._click(self.sel.btn_fold)
         if a == ActionType.CHECK:
-            return self._click(self.sel.btn_check) or self._click(self.sel.btn_call)
+            # NEVER fall back to .call here: when a check is available, PokerNow's .call button is
+            # the 'BET <min>' shortcut, so clicking it would MIN-BET instead of checking.
+            return self._click(self.sel.btn_check)
         if a == ActionType.CALL:
-            return self._click(self.sel.btn_call) or self._click(self.sel.btn_check)
+            return self._click(self.sel.btn_call)
         if a in (ActionType.BET, ActionType.RAISE):
             if self._raise_to(decision.amount):
                 return True
