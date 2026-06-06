@@ -224,11 +224,11 @@ class LiveBot:
                         reads = self._reads(gs)
                         d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
                         budget = self._action_budget()
+                        big_pot = float(gs.pot) >= 18 * float(self.config.big_blind)
+                        if big_pot and self.executor.can_act and not self._needs_rebuy:
+                            self.executor.activate_extra_time()   # any big-pot decision (incl. a jam-call): buy clock
                         if d.action in (ActionType.BET, ActionType.RAISE):
                             budget = max(0.6, budget - 2.0)       # reserve time for the multi-step bet panel
-                            big_pot = float(gs.pot) >= 18 * float(self.config.big_blind)
-                            if big_pot and self.executor.can_act and not self._needs_rebuy:
-                                self.executor.activate_extra_time()   # big pot: buy clock so a raise can't time out
                         secs = think_seconds(d, gs, self.rng, lo=self.config.min_think,
                                              hi=self.config.max_think, bb=self.config.big_blind,
                                              max_wait=budget)

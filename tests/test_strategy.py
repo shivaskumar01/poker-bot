@@ -59,12 +59,12 @@ def preflop_state(n, hero_seat, hero_cards, button=0, *, raises=(), limpers=(),
 
 
 def postflop_state(n, hero_seat, hero_cards, board, button=0, *, to_call="0",
-                   pot="10", hero_stack="100", live=None):
+                   pot="10", hero_stack="100", live=None, opp_stack="100"):
     order = list(range(n))
     live = set(order) if live is None else set(live)
     seats = tuple(
         Seat(seat_id=s, name=f"p{s}",
-             stack=D(hero_stack) if s == hero_seat else D("100"),
+             stack=D(hero_stack) if s == hero_seat else D(opp_stack),
              committed=D("0"), total_committed=D("0"),
              status=SeatStatus.ACTIVE if s in live else SeatStatus.FOLDED,
              cards=tuple(parse_cards(hero_cards)) if s == hero_seat else (),
@@ -203,6 +203,15 @@ def test_facing_allin_for_more_than_stack_calls_not_raises():
     d = decide(gs, rng(), iterations=3000)
     assert d.action == ActionType.CALL
     assert d.amount == D("1.63")          # capped to remaining stack, not a bogus raise
+
+
+def test_facing_river_jam_calls_never_raises():
+    # the freeze bug: opponent JAMS the river (their stack -> 0) for less than hero's stack. Hero has
+    # a monster but must CALL the all-in, never try to RAISE (there's no raise control -> it hung).
+    gs = postflop_state(2, hero_seat=1, hero_cards="AhAc", board="AsKd7c2h3s", button=0,
+                        to_call="60", pot="60", hero_stack="200", opp_stack="0")
+    d = decide(gs, rng(), iterations=3000)
+    assert d.action == ActionType.CALL          # trip aces calls the jam; crucially NOT a raise
 
 
 def test_low_spr_value_hand_commits_all_in():

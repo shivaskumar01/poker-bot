@@ -46,7 +46,13 @@ class Executor:
         if a == ActionType.CALL:
             return self._click(self.sel.btn_call) or self._click(self.sel.btn_check)
         if a in (ActionType.BET, ActionType.RAISE):
-            return self._raise_to(decision.amount)
+            if self._raise_to(decision.amount):
+                return True
+            # no raise control on screen (e.g. facing an all-in jam — only call/fold) -> CALL is the
+            # closest legal action, so we don't get stuck retrying a raise that can't happen.
+            if self.page.query_selector(self.sel.btn_raise) is None:
+                return self._click(self.sel.btn_call) or self._click(self.sel.btn_check)
+            return False
         return False
 
     # --- raise/bet: open panel -> set amount -> confirm ---------------------

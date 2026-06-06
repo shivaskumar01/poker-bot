@@ -34,9 +34,12 @@ def _loose(read) -> bool:
 
 
 def _facing_all_in(gs: GameState) -> bool:
-    """Facing a bet where every live opponent is already all-in -> can only call or fold."""
+    """Facing a bet where every live opponent is all-in -> can only call or fold (never raise).
+    Detect it by status OR a 0 stack (a jam leaves them with nothing behind), since the live
+    scraper doesn't always tag the ALL_IN status."""
     opps = gs.live_opponents
-    return gs.to_call > 0 and bool(opps) and all(o.status is SeatStatus.ALL_IN for o in opps)
+    return gs.to_call > 0 and bool(opps) and all(
+        o.status is SeatStatus.ALL_IN or o.stack <= 0 for o in opps)
 
 
 def _in_position(gs: GameState) -> bool:
