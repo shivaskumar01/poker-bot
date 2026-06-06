@@ -66,16 +66,18 @@ def _size(gs: GameState, mx: Mixer, *, value: bool, read) -> Decimal:
     skew bigger for value vs loose callers and allow river overpot jams."""
     river = gs.street == Street.RIVER
     loose = _loose(read)
+    # the group bets BIG (overbets, value-heavy), so ~2/3–3/4 pot is the baseline and small bets are
+    # rare — never a min-bet-looking 1/2 pot as the default.
     if value:
-        menu = [(Decimal("0.5"), 2.5), (Decimal("0.66"), 2.0), (Decimal("0.75"), 1.5), (Decimal("1.0"), 1.2)]
+        menu = [(Decimal("0.5"), 0.7), (Decimal("0.66"), 2.3), (Decimal("0.75"), 2.3), (Decimal("1.0"), 1.6)]
         if loose:
-            menu += [(Decimal("1.5"), 1.2), (Decimal("2.0"), 0.7)]       # overbet loose callers for value
+            menu += [(Decimal("1.5"), 1.3), (Decimal("2.0"), 0.8)]       # overbet loose callers for value
             if river:
                 menu += [(Decimal("2.5"), 0.5), (Decimal("3.0"), 0.4)]   # river overpot jams
     else:  # (semi)bluff -> polarized; mirror value sizes (incl overbets vs loose) to stay balanced
-        menu = [(Decimal("0.5"), 1.5), (Decimal("0.66"), 2.0), (Decimal("0.75"), 1.5), (Decimal("1.0"), 1.0)]
+        menu = [(Decimal("0.5"), 0.7), (Decimal("0.66"), 2.3), (Decimal("0.75"), 1.9), (Decimal("1.0"), 1.3)]
         if loose:
-            menu += [(Decimal("1.5"), 0.8), (Decimal("2.0"), 0.4)]
+            menu += [(Decimal("1.5"), 0.9), (Decimal("2.0"), 0.4)]
     return mx.choose(menu)
 
 

@@ -54,13 +54,26 @@ class Executor:
         if not self._panel_open():                     # 1) open the bet panel (skip if a retry left it open)
             if not self._click(self.sel.btn_raise):
                 return False
-            self._wait(450)
+            self._wait(320)
         if not self._raise_dumped:                     # capture the panel once for calibration
             self._raise_dumped = True
             dump_dom(self.page, "after-raise-click")
         self._set_amount(amount)                       # 2) set the amount (cents-entry field)
-        self._wait(200)
+        self._wait(130)
         return self._click_confirm()                   # 3) confirm via the SUBMIT input
+
+    def activate_extra_time(self) -> bool:
+        """Click PokerNow's 'ACTIVATE EXTRA TIME' to buy clock on a big decision (no-op once used
+        this turn / if absent). Lets the bot tank a big pot without getting auto-folded."""
+        try:
+            for b in (self.page.query_selector_all(f"{self.sel.action_area} button, button") or []):
+                t = (b.inner_text() or "").upper()
+                if "ACTIVATE" in t and "EXTRA TIME" in t and b.is_visible() and b.is_enabled():
+                    b.click(timeout=1500)
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        return False
 
     def _panel_open(self) -> bool:
         try:
@@ -127,7 +140,7 @@ class Executor:
                 fn()
             except Exception:  # noqa: BLE001
                 continue
-            self._wait(120)
+            self._wait(100)
             if self._amount_is(target):
                 used = name
                 break

@@ -63,7 +63,8 @@ def fourbet_to(gs: GameState, *, multiple: Decimal = Decimal("2.5")) -> Decimal:
 
 # --- postflop (clean fraction/multiple of the pot, rounded to the big blind) ---
 def postflop_bet_to(gs: GameState, pot_fraction: Decimal) -> Decimal:
-    bet = max(gs.pot * pot_fraction, gs.config.big_blind)
+    # never a min bet — floor at 2x BB so a small/under-read pot can't collapse to 1bb
+    bet = max(gs.pot * pot_fraction, Decimal("2") * gs.config.big_blind)
     return legalize_raise_to(gs, _round_amt(gs.hero.committed + bet, gs.config.big_blind))
 
 
