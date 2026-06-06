@@ -196,13 +196,14 @@ class Executor:
         target = float(amount)
         cents = str(int((amount * 100).to_integral_value()))   # 100.00 -> '10000' (cents keypad)
         dec = f"{amount:.2f}"                                   # '100.00' (decimal form)
+        # Slider FIRST — proven reliable on this table (sets the exact value for clean step amounts,
+        # which the bot's BB-rounded sizes are). Text/native are fallbacks; they're tried WITHOUT
+        # clearing the field first (clearing left it empty -> no bet).
         strategies = (
-            # text box FIRST — a cents-entry field takes the EXACT amount (no snapping). The slider
-            # is last because it rounds to its step (e.g. 25 -> 26).
-            ("type-cents", lambda: self._type_into(self.page.query_selector(self.sel.raise_amount), cents)),
+            ("slider-cents", lambda: self._native(self.sel.raise_slider, cents)),
             ("native-decimal", lambda: self._native(self.sel.raise_amount, dec)),
             ("native-cents", lambda: self._native(self.sel.raise_amount, cents)),
-            ("slider-cents", lambda: self._native(self.sel.raise_slider, cents)),
+            ("type-cents", lambda: self._type_into(self.page.query_selector(self.sel.raise_amount), cents)),
         )
         used = "none"
         for name, fn in strategies:
@@ -210,7 +211,7 @@ class Executor:
                 fn()
             except Exception:  # noqa: BLE001
                 continue
-            self._wait(90)
+            self._wait(140)                                    # let the linked field sync before reading
             if self._amount_is(target):                        # exact match within ~2%
                 used = name
                 break
@@ -249,7 +250,9 @@ class Executor:
 
     def _amount_is(self, target: float) -> bool:
         v = self._amount_value()
-        return v is not None and abs(v - target) <= max(0.25, target * 0.02)   # within a chip / 2%
+        # accept the slider's nearest-step value (a chip or two off — the table's own granularity)
+        # but reject a wrong amount (a min bet, or a way-off preset)
+        return v is not None and abs(v - target) <= max(2.0, target * 0.04)
 
     def _type_into(self, el, text: str) -> bool:
         try:
