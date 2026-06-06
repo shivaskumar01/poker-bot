@@ -107,16 +107,28 @@ class Executor:
                 pass
         return False
 
+    _PRESETS = (("1/2-pot", r"1/2\s*pot"), ("3/4-pot", r"3/4\s*pot"),
+                ("pot", r"^\s*pot\s*$"), ("all-in", r"all[\s-]?in"))
+
     def _preset_near(self, target: float) -> str:
-        """Clean POT-relative preset that lands a SANE (>= ~1/3 of target) amount — a real bet, never
-        the min default. Tries ¾-pot, then pot, then all-in, and verifies each landed in the ballpark."""
-        for label, rx in (("3/4-pot", r"3/4\s*pot"), ("pot", r"^\s*pot\s*$"), ("all-in", r"all[\s-]?in")):
+        """When the exact amount won't type, fall back to the POT-relative preset CLOSEST to the
+        target (¼/½/¾/pot/all-in) — and only if it's within ~20% of target. Tries each, reads the
+        amount it produces, then re-selects the closest. Never a wildly-off size; never a min bet."""
+        produced = {}
+        for label, rx in self._PRESETS:
             if self._click_label(rx):
-                self._wait(100)
+                self._wait(70)
                 got = self._amount_value()
-                if got is not None and got >= 0.35 * target:
-                    return label
-        return "none"
+                if got is not None:
+                    produced[label] = (rx, got)
+        if not produced:
+            return "none"
+        label, (rx, got) = min(produced.items(), key=lambda kv: abs(kv[1][1] - target))
+        if abs(got - target) > 0.20 * target:          # nothing close enough -> let the caller check/call
+            return "none"
+        self._click_label(rx)                          # re-select the closest preset (last click left a different one)
+        self._wait(70)
+        return label
 
     def activate_extra_time(self) -> bool:
         """Click PokerNow's 'ACTIVATE EXTRA TIME' to buy clock on a big decision (no-op once used
@@ -185,10 +197,12 @@ class Executor:
         cents = str(int((amount * 100).to_integral_value()))   # 100.00 -> '10000' (cents keypad)
         dec = f"{amount:.2f}"                                   # '100.00' (decimal form)
         strategies = (
-            ("slider-cents", lambda: self._native(self.sel.raise_slider, cents)),
+            # text box FIRST — a cents-entry field takes the EXACT amount (no snapping). The slider
+            # is last because it rounds to its step (e.g. 25 -> 26).
             ("type-cents", lambda: self._type_into(self.page.query_selector(self.sel.raise_amount), cents)),
             ("native-decimal", lambda: self._native(self.sel.raise_amount, dec)),
             ("native-cents", lambda: self._native(self.sel.raise_amount, cents)),
+            ("slider-cents", lambda: self._native(self.sel.raise_slider, cents)),
         )
         used = "none"
         for name, fn in strategies:

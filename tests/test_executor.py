@@ -204,6 +204,13 @@ def test_bet_falls_back_to_preset_not_min_when_typing_fails():
     assert page.confirmed is not None and page.confirmed >= 0.35 * 150   # a sane bet, never the 2.0 min
 
 
+def test_preset_fallback_picks_closest_not_an_overbet():
+    # the 152->230 leak: target is ½-pot but the fallback grabbed ¾-pot. Must pick the CLOSEST preset.
+    page = _BetPage(settable=False, presets=True, pot=304.0)   # ½pot=152, ¾pot=228, pot=304
+    assert _ex(page).execute(Decision(ActionType.BET, D("152.00"), "value bet")) is True
+    assert page.confirmed is not None and abs(page.confirmed - 152.0) <= 1   # ½-pot, not ¾-pot (228)
+
+
 def test_bet_checks_rather_than_min_betting_when_amount_cannot_be_set():
     page = _BetPage(settable=False, presets=False, pot=200.0)  # nothing can size the bet
     assert _ex(page).execute(Decision(ActionType.BET, D("150.00"), "value bet")) is True
