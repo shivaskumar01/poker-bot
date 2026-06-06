@@ -60,13 +60,34 @@ class Executor:
         if not self._panel_open():                     # 1) open the bet panel (skip if a retry left it open)
             if not self._click(self.sel.btn_raise):
                 return False
-            self._wait(320)
+            self._await_panel()                        # WAIT for the amount field to render (not a fixed delay)
         if not self._raise_dumped:                     # capture the panel once for calibration
             self._raise_dumped = True
             dump_dom(self.page, "after-raise-click")
         self._set_amount(amount)                       # 2) set the amount (cents-entry field)
         self._wait(130)
         return self._click_confirm()                   # 3) confirm via the SUBMIT input
+
+    def _await_panel(self) -> None:
+        """Block until the bet panel's amount field is actually on screen — a fixed delay was
+        sometimes too short, leaving the field unset so the default (a min bet) got confirmed."""
+        try:
+            self.page.wait_for_selector(self.sel.raise_amount, state="visible", timeout=1500)
+        except Exception:  # noqa: BLE001
+            self._wait(300)
+        self._wait(100)
+
+    def _click_preset(self) -> bool:
+        """Last-resort clean size when the exact amount won't set — click the ¾-pot preset button
+        (a sane, non-min bet) rather than ever confirming a wrong/min amount."""
+        for b in (self.page.query_selector_all(f"{self.sel.action_area} button, button") or []):
+            try:
+                if b.is_visible() and re.search(r"3/4\s*pot|^\s*pot\s*$", (b.inner_text() or "").strip(), re.I):
+                    b.click(timeout=1500)
+                    return True
+            except Exception:  # noqa: BLE001
+                pass
+        return False
 
     def activate_extra_time(self) -> bool:
         """Click PokerNow's 'ACTIVATE EXTRA TIME' to buy clock on a big decision (no-op once used
@@ -150,6 +171,8 @@ class Executor:
             if self._amount_is(target):
                 used = name
                 break
+        if used == "none" and self._click_preset():            # couldn't set exact -> clean ¾-pot, never a min bet
+            used = "preset-3/4"
         if not self._set_dumped:                               # one-time calibration snapshot
             self._set_dumped = True
             dump_dom(self.page, f"after-set-amount target={dec} got={self._amount_str()!r} via={used}")
