@@ -10,13 +10,16 @@ step leaves the panel open and the bot gets auto-folded — so this does all thr
 from __future__ import annotations
 
 import re
+import time
 from decimal import Decimal
+from pathlib import Path
 
 from ..model.state import ActionType
 from ..strategy.decision import Decision
 from .domdump import dump_dom
 
 _CONFIRM_RE = re.compile(r"raise to|bet to|^\s*bet\s+[\d.,]|all[\s-]?in|confirm|^\s*go\s*$", re.I)
+_BETLOG = Path("data/bet_log.txt")          # paper trail of decided-vs-actually-did (gitignored)
 
 
 class Executor:
@@ -28,6 +31,8 @@ class Executor:
         self.players_consent = players_consent
         self._raise_dumped = False
         self._set_dumped = False
+        self._fallback_dumps = 0     # bounded DOM dumps on the disconnect (couldn't-size) path
+        self._last_set: float | None = None   # the box value we actually verified+confirmed
 
     @property
     def can_act(self) -> bool:
@@ -42,7 +47,8 @@ class Executor:
 
     def execute(self, decision: Decision) -> bool:
         """Perform the action. Returns False (touching nothing) if unauthorized, not actually the
-        hero's turn, or the control isn't found."""
+        hero's turn, or the control isn't found. Logs decided-vs-actually-did every time so any
+        dashboard/execution disconnect leaves a ground-truth trail in data/bet_log.txt."""
         if not self.can_act:
             return False
         if not self._is_hero_turn():
@@ -50,24 +56,49 @@ class Executor:
             # (slow think / a long bet sequence), the on-screen controls are PRE-ACTION ('check/fold
             # ahead') that PokerNow QUEUES for next turn -> the bot would act one street behind.
             return False
+        ok, did = self._dispatch(decision)
+        self._betlog(decision, did, ok)
+        return ok
+
+    def _dispatch(self, decision: Decision) -> tuple[bool, str]:
+        """Click the action and report (success, what-actually-happened) for the log."""
         a = decision.action
         if a == ActionType.FOLD:
-            return self._click(self.sel.btn_fold)
+            return self._click(self.sel.btn_fold), "fold"
         if a == ActionType.CHECK:
             # NEVER fall back to .call here: when a check is available, PokerNow's .call button is
             # the 'BET <min>' shortcut, so clicking it would MIN-BET instead of checking.
-            return self._click(self.sel.btn_check)
+            return self._click(self.sel.btn_check), "check"
         if a == ActionType.CALL:
-            return self._click(self.sel.btn_call)
+            return self._click(self.sel.btn_call), "call"
         if a in (ActionType.BET, ActionType.RAISE):
+            self._last_set = None
             if self._raise_to(decision.amount):
-                return True
+                got = self._last_set if self._last_set is not None else float(decision.amount)
+                return True, f"{a.name.lower()}→{got:.2f}"
             # Couldn't open/size the bet -> NEVER confirm a min bet. A BET is checkable, so CHECK;
             # a RAISE faces a bet (incl. an all-in jam), so CALL. Either is far better than min-betting.
+            # This is a real disconnect (dashboard said bet/raise) -> snapshot the DOM to diagnose.
+            if self._fallback_dumps < 10:
+                self._fallback_dumps += 1
+                dump_dom(self.page, f"FALLBACK target={float(decision.amount):.2f} "
+                                    f"box={self._amount_str()!r}")
             if a == ActionType.BET:
-                return self._click(self.sel.btn_check)
-            return self._click(self.sel.btn_call)
-        return False
+                return self._click(self.sel.btn_check), "FALLBACK-check (couldn't size bet)"
+            return self._click(self.sel.btn_call), "FALLBACK-call (couldn't size raise)"
+        return False, "noop"
+
+    def _betlog(self, decision: Decision, did: str, ok: bool) -> None:
+        """Append one line: what the dashboard decided vs. what the executor actually did."""
+        try:
+            want = f"{decision.action.name} {float(decision.amount):.2f}"
+            disc = "" if ok and ("FALLBACK" not in did) else "   <-- DISCONNECT"
+            _BETLOG.parent.mkdir(parents=True, exist_ok=True)
+            with _BETLOG.open("a") as fh:
+                fh.write(f"{time.strftime('%H:%M:%S')}  decided {want:<14} did {did:<24} "
+                         f"ok={ok}{disc}\n")
+        except Exception:  # noqa: BLE001 - logging must never break execution
+            pass
 
     # --- raise/bet: open panel -> set amount (VERIFIED) -> confirm ----------
     def _raise_to(self, amount: Decimal) -> bool:
@@ -217,6 +248,8 @@ class Executor:
                 break
         if used == "none":                                     # exact set failed -> clean preset (never min)
             used = self._preset_near(target)
+        if used != "none":
+            self._last_set = self._amount_value()              # the value we'll confirm (for the bet log)
         if not self._set_dumped:                               # one-time calibration snapshot
             self._set_dumped = True
             dump_dom(self.page, f"after-set-amount target={dec} got={self._amount_str()!r} via={used}")

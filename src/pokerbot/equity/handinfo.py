@@ -32,28 +32,38 @@ def _category(cards) -> str:
     return eval7.handtype(eval7.evaluate([_E[str(c)] for c in cards]))
 
 
-def _flush_draw(cards, board_len: int) -> bool:
-    if board_len >= 5:
+def _flush_draw(hole, board) -> bool:
+    if len(board) >= 5:
         return False
-    return max(Counter(c.suit for c in cards).values()) == 4
+    counts = Counter(c.suit for c in list(hole) + list(board))
+    if not counts:
+        return False
+    suit, n = max(counts.items(), key=lambda kv: kv[1])
+    return n == 4 and any(c.suit == suit for c in hole)     # HERO must hold one of the suit
 
 
-def _straight_draw(cards, board_len: int) -> bool:
-    """Open-ended straight draw only (four in a row, completable on BOTH ends). Gutshots and
-    one-enders (4 outs) are too weak to treat as a draw for (semi-)bluffing."""
-    if board_len >= 5:
+def _straight_draw(hole, board) -> bool:
+    """Open-ended straight draw only (four in a row, completable on BOTH ends) that USES a hole card
+    — a draw sitting entirely on the board isn't the hero's. Gutshots/one-enders are too weak."""
+    if len(board) >= 5:
         return False
-    vals = {c.value for c in cards}
+    vals = {c.value for c in list(hole) + list(board)}
+    hole_vals = {c.value for c in hole}
     if 14 in vals:
-        vals.add(1)  # wheel ace
+        vals.add(1)          # wheel ace
+    if 14 in hole_vals:
+        hole_vals.add(1)
     for low in range(2, 11):                        # runs 2-5 .. 10-13: both ends make a straight
-        if set(range(low, low + 4)) <= vals:
+        run = set(range(low, low + 4))
+        if run <= vals and (run & hole_vals):       # the run includes a hole card
             return True
     return False
 
 
 def classify_hand(hole: tuple[Card, ...], board: tuple[Card, ...]) -> HandInfo:
     all_cards = list(hole) + list(board)
+    if len(hole) < 2 or len(all_cards) < 5:         # cards not (fully) read -> treat as air, never crash
+        return HandInfo(category="High Card", made=False, strong=False, draw=False)
     cat = _category(all_cards)
     board_ranks = [c.value for c in board]
     top_board = max(board_ranks) if board_ranks else 0
@@ -70,5 +80,5 @@ def classify_hand(hole: tuple[Card, ...], board: tuple[Card, ...]) -> HandInfo:
     else:
         strong = False                                  # weak/middle pair, or board pair only
 
-    draw = _flush_draw(all_cards, len(board)) or _straight_draw(all_cards, len(board))
+    draw = _flush_draw(hole, board) or _straight_draw(hole, board)
     return HandInfo(category=cat, made=made, strong=strong, draw=draw)

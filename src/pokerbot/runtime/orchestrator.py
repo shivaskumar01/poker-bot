@@ -215,7 +215,10 @@ class LiveBot:
                     gs = self._build_state(raw)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),
                            str(gs.to_call), gs.street.name)
-                    if sig != last:
+                    # Decide ONLY on a complete read. If the hole cards haven't rendered yet (a
+                    # momentary scrape miss), don't decide off air — re-read next loop. Deciding with
+                    # <2 cards is the "can't read hands" disconnect: the engine would size off nothing.
+                    if sig != last and len(gs.hero.cards) == 2:
                         last = sig
                         if gs.street == Street.PREFLOP:           # hand-boundary bankroll/hand tracking
                             self.guard.observe_bankroll(gs.hero.stack)
