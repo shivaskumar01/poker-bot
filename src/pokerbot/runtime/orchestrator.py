@@ -191,6 +191,8 @@ class LiveBot:
               f"kill-switch=create a file named '{self.config.kill_file}' to stop\n")
         last = None          # sig we've already decided + thought about
         pending = None       # decision awaiting a successful click (retried until it lands)
+        acted = False        # we've already acted this turn -> don't re-decide (avoids a phantom
+                             #   second decision once our own bet registers and to-call drops to 0)
         while True:
             if self.stop_event is not None and self.stop_event.is_set():
                 print("\n== stopped (requested) ==")
@@ -215,10 +217,12 @@ class LiveBot:
                     gs = self._build_state(raw)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),
                            str(gs.to_call), gs.street.name)
-                    # Decide ONLY on a complete read. If the hole cards haven't rendered yet (a
-                    # momentary scrape miss), don't decide off air — re-read next loop. Deciding with
-                    # <2 cards is the "can't read hands" disconnect: the engine would size off nothing.
-                    if sig != last and len(gs.hero.cards) == 2:
+                    # Decide ONLY on a complete read, and ONLY once per turn. Skip if the hole cards
+                    # haven't rendered yet (a scrape miss -> would size off nothing), or if we've
+                    # already acted this turn. The latter is the "dashboard says 20 but bet 26" bug:
+                    # after our raise registers, to-call drops to 0, sig changes, and the loop would
+                    # otherwise re-decide the SAME hand to a fresh (random-sized) raise and show that.
+                    if sig != last and len(gs.hero.cards) == 2 and not acted:
                         last = sig
                         if gs.street == Street.PREFLOP:           # hand-boundary bankroll/hand tracking
                             self.guard.observe_bankroll(gs.hero.stack)
@@ -248,9 +252,9 @@ class LiveBot:
                         else:
                             pending = None
                     if pending is not None and self.executor.execute(pending):
-                        pending = None                   # clicked through; else retry next loop
+                        pending, acted = None, True       # clicked through -> latch; else retry next loop
                 else:
-                    pending = None                       # not our turn anymore — drop any stale action
+                    pending, acted = None, False          # turn passed -> drop stale action, re-arm
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors
                 print("loop error:", e)
             time.sleep(0.1)         # fast poll so the bot detects its turn quickly on fast tables

@@ -34,6 +34,9 @@ class _RecExec:
     def can_act(self):
         return self._can
 
+    def activate_extra_time(self):
+        return False
+
     def execute(self, decision):
         self.calls.append(decision)
         return True
@@ -64,6 +67,64 @@ def test_execute_mode_with_consent_acts():
     bot = LiveBot(_FakeScraper(_RAW), ex, None, _cfg("execute", True), _guard())
     _gs, d, acted = bot.step()
     assert acted is True and ex.calls == [d]
+
+
+def test_latch_no_phantom_redecide_after_own_raise():
+    # The "dashboard says 20 but bet 26" bug: after our raise registers, to-call drops (here 20->0)
+    # while it's BRIEFLY still our turn (DOM lag). The loop must NOT re-decide the same hand to a
+    # fresh (random-sized) raise and push that phantom to the dashboard after the bet already landed.
+    import threading
+    stop = threading.Event()
+
+    facing = RawObservation(                              # pocket aces facing an open to 3 -> 3-bet
+        seats=[RawSeat(0, "hero", "100", is_hero=True, cards=["Ac", "Ad"]),
+               RawSeat(1, "vik", "100")],
+        board=[], pot="4.5", to_call="3", button_seat_id=0)
+    after = RawObservation(                               # our 3-bet registered: to-call now 0
+        seats=[RawSeat(0, "hero", "91", is_hero=True, cards=["Ac", "Ad"]),
+               RawSeat(1, "vik", "100")],
+        board=[], pot="13.5", to_call="0", button_seat_id=0)
+
+    class _Scr:
+        page = None
+        def __init__(self):
+            self.turn_calls = 0
+            self.reads = 0
+
+        def read_blinds(self):
+            return None
+
+        def read_hero_stack(self):
+            return None
+
+        def read_seconds_left(self):
+            return None
+
+        def action_buttons_present(self):
+            return False
+
+        def is_hero_turn(self):
+            self.turn_calls += 1
+            if self.turn_calls >= 12:
+                stop.set()                                # end the loop after enough polls
+            return self.turn_calls <= 5                   # still our turn (lag) for a bit, then passes
+
+        def read_observation(self):
+            self.reads += 1
+            return facing if self.reads == 1 else after
+
+    import random
+    seen = []
+    ex = _RecExec(can_act=True)
+    bot = LiveBot(_Scr(), ex, None, _cfg("execute", True), _guard(), rng=random.Random(0),
+                  on_decision=lambda gs, d, reads, secs=None: seen.append(d), stop_event=stop)
+    bot.run()
+
+    assert len(ex.calls) == 1                             # acted exactly once
+    assert ex.calls[0].action == ActionType.RAISE        # a value 3-bet (mixed-size -> the phantom risk)
+    assert len(seen) == 1                                 # dashboard shown ONE decision (no phantom)
+    assert seen[0] is ex.calls[0]                         # the shown decision IS the executed one (same
+    #                                                      object) -> dashboard amount == bet amount, always
 
 
 def test_session_guard_stop_loss_and_win():
