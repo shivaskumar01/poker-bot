@@ -193,6 +193,8 @@ class LiveBot:
         pending = None       # decision awaiting a successful click (retried until it lands)
         acted = False        # we've already acted this turn -> don't re-decide (avoids a phantom
                              #   second decision once our own bet registers and to-call drops to 0)
+        acted_board = ()     # the board + to-call we acted on, so we can tell a genuine NEW decision
+        acted_call = None    #   point (new street / a bigger bet to face) from our own action's echo
         while True:
             if self.stop_event is not None and self.stop_event.is_set():
                 print("\n== stopped (requested) ==")
@@ -217,6 +219,13 @@ class LiveBot:
                     gs = self._build_state(raw)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),
                            str(gs.to_call), gs.street.name)
+                    # Re-arm the "already acted" latch the moment this is a GENUINELY new decision:
+                    # a new street (board changed) or a bigger bet to face (to-call went up). Without
+                    # this, closing a street (e.g. calling preflop) and then being first to act on the
+                    # flop would stay latched and the bot would never act on the flop.
+                    if acted and (sig[1] != acted_board
+                                  or (acted_call is not None and gs.to_call > acted_call)):
+                        acted = False
                     # Decide ONLY on a complete read, and ONLY once per turn. Skip if the hole cards
                     # haven't rendered yet (a scrape miss -> would size off nothing), or if we've
                     # already acted this turn. The latter is the "dashboard says 20 but bet 26" bug:
@@ -252,7 +261,8 @@ class LiveBot:
                         else:
                             pending = None
                     if pending is not None and self.executor.execute(pending):
-                        pending, acted = None, True       # clicked through -> latch; else retry next loop
+                        pending, acted = None, True        # clicked through -> latch; else retry next loop
+                        acted_board, acted_call = sig[1], gs.to_call   # remember WHAT we acted on
                 else:
                     pending, acted = None, False          # turn passed -> drop stale action, re-arm
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors

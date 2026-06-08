@@ -127,6 +127,61 @@ def test_latch_no_phantom_redecide_after_own_raise():
     #                                                      object) -> dashboard amount == bet amount, always
 
 
+def test_latch_rearms_on_new_street_when_first_to_act():
+    # The regression the latch introduced: after we CLOSE a street (call preflop) and are first to
+    # act on the flop, there may be NO opponent turn in between, so is_hero_turn never reads False.
+    # The latch must still re-arm on the new street (board changed) so the bot acts on the flop.
+    import random
+    import threading
+    stop = threading.Event()
+
+    preflop = RawObservation(                             # hero is BB (opp on button) facing an open
+        seats=[RawSeat(0, "hero", "100", is_hero=True, cards=["Ac", "Ad"]),
+               RawSeat(1, "vik", "100")],
+        board=[], pot="4.5", to_call="3", button_seat_id=1)
+    flop = RawObservation(                                # flop dealt; hero (OOP) is first to act
+        seats=[RawSeat(0, "hero", "94", is_hero=True, cards=["Ac", "Ad"]),
+               RawSeat(1, "vik", "94")],
+        board=["Kc", "7d", "2s"], pot="12", to_call="0", button_seat_id=1)
+
+    class _Scr:
+        page = None
+
+        def __init__(self):
+            self.reads = 0
+
+        def read_blinds(self):
+            return None
+
+        def read_hero_stack(self):
+            return None
+
+        def read_seconds_left(self):
+            return None
+
+        def action_buttons_present(self):
+            return False
+
+        def is_hero_turn(self):
+            return True                                   # WORST CASE: never reads False between streets
+
+        def read_observation(self):
+            self.reads += 1
+            if self.reads >= 6:
+                stop.set()
+            return preflop if self.reads <= 2 else flop
+
+    seen = []
+    ex = _RecExec(can_act=True)
+    bot = LiveBot(_Scr(), ex, None, _cfg("execute", True), _guard(), rng=random.Random(0),
+                  on_decision=lambda gs, d, reads, secs=None: seen.append(gs.street.name),
+                  stop_event=stop)
+    bot.run()
+
+    assert seen == ["PREFLOP", "FLOP"]                    # acted on BOTH streets, exactly once each
+    assert len(ex.calls) == 2                             # ... and clicked both (no skipped flop)
+
+
 def test_session_guard_stop_loss_and_win():
     g = SessionGuard(Limits(50, 100, 1000), D("1"))
     g.observe_bankroll(D("200"))
