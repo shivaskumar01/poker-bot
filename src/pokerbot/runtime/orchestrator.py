@@ -64,6 +64,9 @@ class LiveBot:
         self._zero_reads = 0             # consecutive 0-stack reads (debounce all-in vs real bust)
         self._hand_hole = None           # hole cards of the hand we last counted (hand boundary)
         self._last_warn = None           # last upkeep error, surfaced to the UI via on_status
+        self._pre_track = None           # (hole, my_raises, my_raise_to): the bot's OWN preflop
+                                         #   raises this hand, so a 3-bet of our open is priced +
+                                         #   routed as a 3-bet pot (keyed by hole cards = self-resets)
 
     def request_rebuy(self) -> None:
         """Called from another thread (the UI) — confirms a second buy-in; the bot thread
@@ -174,10 +177,12 @@ class LiveBot:
 
     def _build_state(self, raw):
         cfg = self.config
-        gs = reconstruct_preflop(
-            to_game_state(raw, cfg.small_blind, cfg.big_blind, cfg.hero_name),
-            cfg.small_blind, cfg.big_blind)
-        return infer_preflop_raise(gs, cfg.big_blind)
+        gs = to_game_state(raw, cfg.small_blind, cfg.big_blind, cfg.hero_name)
+        my_raises, my_to = 0, None
+        if self._pre_track is not None and self._pre_track[0] == tuple(map(str, gs.hero.cards)):
+            _, my_raises, my_to = self._pre_track
+        gs = reconstruct_preflop(gs, cfg.small_blind, cfg.big_blind, hero_paid=my_to)
+        return infer_preflop_raise(gs, cfg.big_blind, my_raises=my_raises)
 
     def _iterations(self, gs) -> int:
         """More Monte-Carlo rollouts when the pot is big — lower variance exactly where a
@@ -286,6 +291,10 @@ class LiveBot:
                         else:
                             pending = None
                     if pending is not None and self.executor.execute(pending):
+                        if gs.street == Street.PREFLOP and pending.action is ActionType.RAISE:
+                            same = self._pre_track is not None and self._pre_track[0] == sig[0]
+                            n = self._pre_track[1] + 1 if same else 1
+                            self._pre_track = (sig[0], n, pending.amount)   # our open/3-bet, by hole
                         pending, acted = None, True        # clicked through -> latch; else retry next loop
                         acted_board, acted_call = sig[1], gs.to_call   # remember WHAT we acted on
                 else:

@@ -23,15 +23,13 @@ def test_heads_up_loose_is_not_a_maniac():
 
 
 def test_value_3bet_widens_vs_loose_opener():
-    from pokerbot.strategy.exploit import adj_vs_raise
+    from pokerbot.strategy.exploit import adj_threebet_fraction
     loose = _ps(0.45, 0.35, 20, 10)      # loose-aggressive opener (lag)
     nit = _ps(0.10, 0.08, 5, 10)
-    tb0, cont0 = 0.08, 0.20
-    tb_loose, _ = adj_vs_raise(tb0, cont0, loose)
-    tb_nit, _ = adj_vs_raise(tb0, cont0, nit)
-    assert tb_loose > tb0                 # 3-bet a WIDER value range vs a wide/weak opener
-    assert tb_nit < tb0                   # tighter vs a nit
-    assert adj_vs_raise(tb0, cont0, None) == (tb0, cont0)   # no read -> unchanged
+    tb0 = 0.08
+    assert adj_threebet_fraction(tb0, loose) > tb0   # 3-bet a WIDER value range vs a wide/weak opener
+    assert adj_threebet_fraction(tb0, nit) < tb0     # tighter vs a nit
+    assert adj_threebet_fraction(tb0, None) == tb0   # no read -> unchanged
 
 
 def test_store_marks_hu_profiles(tmp_path):

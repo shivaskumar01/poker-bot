@@ -67,27 +67,18 @@ def iso_fraction(players_left: int, num_limpers: int, *, is_sb: bool,
     return base * 0.80
 
 
-# --- facing a single raise: (3bet-value fraction, continue fraction) ---
-def vs_raise_thresholds(*, in_position: bool, players_left_behind: int,
-                        vs_late_open: bool, is_bb: bool) -> tuple[float, float]:
+# --- facing a single raise: the 3-bet-for-value fraction. (Flat-call defense is decided by
+# --- equity-vs-price below, NOT a fixed continue range — so raise sizing can't run us over.)
+def threebet_fraction(*, in_position: bool, vs_late_open: bool, is_bb: bool) -> float:
     if is_bb:
-        cont = 0.42 if vs_late_open else 0.27
-        tb = 0.060 if vs_late_open else 0.045
-    else:
-        cont = 0.20 if in_position else 0.135
-        tb = 0.060 if in_position else 0.050
-        if vs_late_open:
-            cont *= 1.4
-            tb *= 1.5
-    cont *= 0.9 ** max(0, players_left_behind)  # squeeze risk: tighten with players behind
-    return tb, max(tb, cont)
+        return 0.060 if vs_late_open else 0.045
+    tb = 0.060 if in_position else 0.050
+    return tb * 1.5 if vs_late_open else tb
 
 
-# --- facing a 3-bet: (4bet-value fraction, continue fraction) ---
-def vs_3bet_thresholds(*, in_position: bool) -> tuple[float, float]:
-    fourbet = 0.025 if in_position else 0.020
-    cont = 0.075 if in_position else 0.055
-    return fourbet, max(fourbet, cont)
+# --- facing a 3-bet: the 4-bet-for-value fraction (flat-calls priced by equity below) ---
+def fourbet_fraction(*, in_position: bool) -> float:
+    return 0.025 if in_position else 0.020
 
 
 # --- short-stack push/fold ---
@@ -133,8 +124,10 @@ def defense_equity_threshold(price: float, *, in_position: bool, vs_late_open: b
 
 
 def threebet_call_equity_threshold(price: float, *, in_position: bool) -> float:
-    """Min equity to flat-call a 3-bet (3-bet ranges are strong, so demand more)."""
-    return price + (0.10 if in_position else 0.16)
+    """Min equity to flat-call a 3-bet (3-bet ranges are strong, so demand more).
+    Capped like the open-defense threshold: a bad multiway pot read can push the raw price
+    past 1.0, and premiums must never fold to a 3-bet on a misread pot."""
+    return min(price + (0.10 if in_position else 0.16), 0.58)
 
 
 # Open-raise size mix (bb multiples) so the bot isn't a fixed 2.5x every time.

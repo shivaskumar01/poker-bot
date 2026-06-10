@@ -146,17 +146,22 @@ def to_game_state(raw: RawObservation, small_blind: Decimal, big_blind: Decimal,
     )
 
 
-def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal) -> GameState:
+def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal,
+                        hero_paid: Decimal | None = None) -> GameState:
     """Rebuild preflop committed amounts + pot from blinds and the amount-to-call.
 
     PokerNow shows 0 in the pot display preflop (bets sit in front of players) and the live
     scraper can't read per-seat bet chips — so without this, pot=0 and pot-odds blow up,
-    making the bot fold everything to a 3-bet. Heads-up-accurate; multiway approximate.
+    making the bot fold everything to a 3-bet. `hero_paid` is what the bot KNOWS it already
+    put in this street (its own open/3-bet, tracked by the orchestrator) — without it, facing
+    a 3-bet the hero's open was reset to a blind and the pot (so the price) read wrong.
+    Heads-up-accurate; multiway approximate.
     """
     if gs.street != Street.PREFLOP:
         return gs
     pos = gs.positions
     hero_blind = big_blind if pos.get(gs.hero_seat_id) == "BB" else small_blind
+    hero_committed = max(hero_blind, hero_paid) if hero_paid is not None else hero_blind
     lone = gs.live_opponents[0].seat_id if len(gs.live_opponents) == 1 else None
 
     seats = []
@@ -165,9 +170,9 @@ def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal)
             seats.append(s)
             continue
         if s.seat_id == gs.hero_seat_id:
-            committed = hero_blind
+            committed = hero_committed
         elif gs.to_call > 0 and s.seat_id == lone:
-            committed = hero_blind + gs.to_call          # the heads-up raiser's total
+            committed = hero_committed + gs.to_call      # the heads-up raiser's total ("CALL X" = the gap)
         else:
             p = pos.get(s.seat_id)
             committed = big_blind if p == "BB" else (small_blind if p == "SB" else Decimal("0"))
@@ -177,15 +182,30 @@ def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal)
     return replace(gs, seats=tuple(seats), pot=pot)
 
 
-def infer_preflop_raise(gs: GameState, big_blind: Decimal) -> GameState:
-    """If preflop and facing more than a limp, synthesize a RAISE action so the engine treats the
-    spot as facing a raise (the live scraper can't read the action log). Heads-up the raiser is the
-    lone opponent; multiway the seat is a placeholder (the engine reads raise COUNT, not who)."""
-    if gs.street == Street.PREFLOP and gs.to_call > big_blind and gs.live_opponents:
-        o = gs.live_opponents[0]
-        return replace(gs, actions=(Action(o.seat_id, ActionType.RAISE,
-                                           gs.to_call + gs.hero.committed, Street.PREFLOP),))
-    return gs
+def infer_preflop_raise(gs: GameState, big_blind: Decimal, my_raises: int = 0) -> GameState:
+    """Synthesize the preflop raise history the engine needs (the live scraper can't read the
+    action log). `my_raises` = how many times the HERO has already raised this street (tracked
+    by the orchestrator from its own clicks):
+
+      * my_raises=0, facing more than a limp -> ONE villain raise (an open: _vs_raise).
+      * my_raises=1 and anything more to call -> hero's open + the villain's re-raise = TWO
+        raises (a 3-BET pot: _vs_3bet, 4-bet range ~2.5% not 6%) — before this, the bot
+        treated every 3-bet of its open as a fresh open and 4-bet far too wide.
+      * my_raises=2 -> THREE raises (facing a 4-bet+: premiums only).
+
+    Heads-up the raiser is the lone opponent; multiway the seat is a placeholder (the engine
+    reads raise COUNT and the LAST raiser, not the full history)."""
+    if gs.street != Street.PREFLOP or not gs.live_opponents:
+        return gs
+    facing = gs.to_call > (big_blind if my_raises == 0 else Decimal("0"))
+    if not facing:
+        return gs
+    o = gs.live_opponents[0]
+    level = gs.to_call + gs.hero.committed
+    acts = tuple(Action(gs.hero_seat_id, ActionType.RAISE, gs.hero.committed, Street.PREFLOP)
+                 for _ in range(my_raises))
+    acts += (Action(o.seat_id, ActionType.RAISE, level, Street.PREFLOP),)
+    return replace(gs, actions=acts)
 
 
 class Scraper:

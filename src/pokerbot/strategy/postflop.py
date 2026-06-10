@@ -66,7 +66,8 @@ def _commit(gs: GameState, target: Decimal, eq: float, *, value: bool) -> Decima
 
 def _size(gs: GameState, mx: Mixer, *, value: bool, read) -> Decimal:
     """Pick a CLEAN pot fraction. The group bets ~1/2 pot baseline and overbets ~11%, so we
-    skew bigger for value vs loose callers and allow river overpot jams."""
+    skew bigger for value vs loose callers and allow river overpot jams. The read multiplier
+    then scales it person-by-person (stations pay bigger value bets; nits fold to cheap bluffs)."""
     river = gs.street == Street.RIVER
     loose = _loose(read)
     # the group bets BIG (overbets, value-heavy), so ~2/3–3/4 pot is the baseline and small bets are
@@ -81,7 +82,11 @@ def _size(gs: GameState, mx: Mixer, *, value: bool, read) -> Decimal:
         menu = [(Decimal("0.5"), 0.7), (Decimal("0.66"), 2.3), (Decimal("0.75"), 1.9), (Decimal("1.0"), 1.3)]
         if loose:
             menu += [(Decimal("1.5"), 0.9), (Decimal("2.0"), 0.4)]
-    return mx.choose(menu)
+    frac = mx.choose(menu)
+    mult = exploit.value_size_multiplier(read) if value else exploit.bluff_size_multiplier(read)
+    if mult != 1.0:
+        frac = min(frac * Decimal(str(round(mult, 3))), Decimal("3.0"))   # never beyond a 3x-pot jam
+    return frac
 
 
 def _pure_bluff_freq(read, street: Street, in_position: bool) -> float:
@@ -130,7 +135,9 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
         required = max(0.05, min(0.85, required + exploit.bet_size_delta(bet_fraction, read)))
         call_amt = min(gs.to_call, hero.stack)
         if raise_ok and strong_for_raise and eq >= RAISE_EQ:
-            if mx.chance(0.25):                         # mix a trap with the nuts-ish
+            # trap only with streets LEFT — river slowplay has zero deception value (the hand
+            # ends), so a river flat with the nuts is just a burned value-raise
+            if not river and mx.chance(0.25):           # mix a trap with the nuts-ish
                 return Decision(ActionType.CALL, call_amt, f"trap call {info.category} eq={eq:.2f}", equity=eq)
             return Decision(ActionType.RAISE,
                             _commit(gs, sizing.postflop_raise_to(gs, _size(gs, mx, value=True, read=read)), eq, value=True),

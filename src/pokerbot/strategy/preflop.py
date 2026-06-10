@@ -174,10 +174,9 @@ def _iso_or_fold(gs, ctx, cls, pct, raise_ok, mx, read):
 
 
 def _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok):
-    tb, _cont = ranges.vs_raise_thresholds(
-        in_position=ctx.in_position, players_left_behind=ctx.players_left,
-        vs_late_open=ctx.vs_late_open, is_bb=ctx.is_bb)
-    tb, _ = exploit.adj_vs_raise(tb, _cont, read)
+    tb = ranges.threebet_fraction(in_position=ctx.in_position,
+                                  vs_late_open=ctx.vs_late_open, is_bb=ctx.is_bb)
+    tb = exploit.adj_threebet_fraction(tb, read)
     heads_up = ctx.heads_up_match or ctx.lone_opponent
 
     if pct <= tb and raise_ok:                                  # polarized value 3-bet
@@ -198,7 +197,7 @@ def _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok):
 
 
 def _vs_3bet(gs, ctx, cls, pct, mx, read, raise_ok):
-    fourbet, _cont = ranges.vs_3bet_thresholds(in_position=ctx.in_position)
+    fourbet = ranges.fourbet_fraction(in_position=ctx.in_position)
     if pct <= fourbet and raise_ok:
         if mx.chance(SLOWPLAY_FREQ):                            # trap: flat the premium sometimes
             return Decision(ActionType.CALL, _call_amount(gs), f"flat (trap) {cls} vs 3-bet")

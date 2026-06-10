@@ -365,6 +365,37 @@ def test_kill_switch(tmp_path):
     assert stop and "kill" in why
 
 
+def test_own_open_makes_the_next_decision_a_3bet_pot():
+    # the mis-route: bot opens to 3, villain 3-bets to 9 (CALL 6). Without tracking its own
+    # raise, the bot re-reconstructed hero committed = the 0.5 blind (pot 7, not 12) and saw
+    # ONE raise (an "open") -> 4-bet way too wide. With _pre_track it must see a 3-BET pot.
+    from pokerbot.model.state import Street
+    bot = LiveBot(_FakeScraper(None), _RecExec(True), None, _cfg("execute", True), _guard())
+    bot._pre_track = (("Ac", "Ad"), 1, D("3"))            # we opened to 3 with AcAd
+    raw = RawObservation(
+        seats=[RawSeat(0, "hero", "97", is_hero=True, cards=["Ac", "Ad"]),
+               RawSeat(1, "vik", "91")],
+        board=[], pot="0", to_call="6", button_seat_id=0)  # hero BTN/SB, villain BB 3-bet to 9
+    gs = bot._build_state(raw)
+    assert gs.street == Street.PREFLOP
+    assert gs.hero.committed == D("3")                    # our open survived reconstruction
+    assert gs.seat(1).committed == D("9")                 # villain's 3-bet total = 3 + CALL 6
+    assert gs.pot == D("12")                              # true pot -> true price (6/18, not 6/13)
+    raises = [a for a in gs.actions if a.action == ActionType.RAISE]
+    assert len(raises) == 2                               # open + 3-bet -> routed to _vs_3bet
+    assert raises[-1].seat_id == 1                        # the villain is the aggressor
+
+    # different hole cards = a NEW hand: the stale track must not leak into it
+    fresh = RawObservation(
+        seats=[RawSeat(0, "hero", "100", is_hero=True, cards=["7c", "2d"]),
+               RawSeat(1, "vik", "97")],
+        board=[], pot="0", to_call="2.5", button_seat_id=1)
+    gs2 = bot._build_state(fresh)
+    raises2 = [a for a in gs2.actions if a.action == ActionType.RAISE]
+    assert len(raises2) == 1                              # plain open faced, hero blind restored
+    assert gs2.hero.committed == D("1")                   # BB, not the stale 3
+
+
 def test_config_loads_big_pot_iterations(tmp_path):
     from pokerbot.runtime.config import load_config
     p = tmp_path / "config.yaml"

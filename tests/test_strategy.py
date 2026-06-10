@@ -263,6 +263,45 @@ def test_raise_size_is_legal_facing_a_bet():
 
 # ---------------- hand-reading leaks (from live play) ----------------
 
+def test_river_nuts_facing_a_bet_always_raises_never_traps():
+    # river slowplay has zero deception value (no streets left): the nuts facing a river bet
+    # must raise for value EVERY time — the old 25% trap-call was a burned value-raise
+    for s in range(25):
+        gs = postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2dKh3s",
+                            to_call="10", pot="30")
+        d = decide(gs, random.Random(s), iterations=1500)
+        assert d.action == ActionType.RAISE, f"seed {s}: {d.action}"
+
+
+def test_flop_monster_still_traps_sometimes():
+    # with streets left the trap stays in the mix (deception has value when betting continues)
+    actions = {decide(postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d",
+                                     to_call="6", pot="12"),
+                      random.Random(s), iterations=1200).action for s in range(40)}
+    assert ActionType.CALL in actions and ActionType.RAISE in actions
+
+
+def test_value_sizing_scales_with_the_person():
+    # exploit sizing must be WIRED: average value bet vs a station > vs a nit (same spot)
+    from pokerbot.opponents.stats import PlayerStats, Stat
+
+    def avg_bet(read):
+        amts = []
+        for s in range(60):
+            d = decide(postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d",
+                                      to_call="0", pot="20"),
+                       random.Random(s), iterations=600, reads={1: read})
+            if d.action == ActionType.BET:
+                amts.append(float(d.amount))
+        return sum(amts) / len(amts)
+
+    station = PlayerStats("s", hands=200, agg_actions=10, call_actions=120)
+    station.vpip, station.pfr = Stat(90, 200), Stat(20, 200)
+    nit = PlayerStats("n", hands=200, agg_actions=10, call_actions=5)
+    nit.vpip, nit.pfr = Stat(20, 200), Stat(16, 200)
+    assert avg_bet(station) > avg_bet(nit) * 1.1   # clearly bigger value bets vs the caller
+
+
 def test_one_pair_river_checks_never_bluffs():
     # Hand #25 leak: KK is one pair on 4-3-7-5-A -> CHECK for showdown, never shove as a "bluff"
     gs = postflop_state(2, hero_seat=0, hero_cards="KsKd", board="4s3c7h5dAc", to_call="0", pot="56")

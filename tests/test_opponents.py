@@ -57,9 +57,10 @@ def test_exploit_adjustments_are_directional():
     assert exploit.adj_call_required(0.50, maniac) < 0.50      # call lighter vs over-bluffer
     assert exploit.adj_bluff_freq(0.40, station) < 0.40        # don't bluff stations
 
-    _, cont_vs_maniac = exploit.adj_vs_raise(0.06, 0.20, maniac)
-    _, cont_vs_nit = exploit.adj_vs_raise(0.06, 0.20, nit)
-    assert cont_vs_maniac > 0.20 > cont_vs_nit                 # defend wider vs maniac
+    assert exploit.adj_threebet_fraction(0.06, maniac) > 0.06  # 3-bet wider value vs a wide opener
+    assert exploit.adj_threebet_fraction(0.06, nit) < 0.06
+    assert exploit.adj_defense_threshold(0.40, maniac) < 0.40  # defend wider vs maniac...
+    assert exploit.adj_defense_threshold(0.40, nit) > 0.40     # ...tighter vs a nit
 
     # no read (or too few hands) -> baseline unchanged
     assert exploit.adj_value_threshold(0.55, None) == 0.55
