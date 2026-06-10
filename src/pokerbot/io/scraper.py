@@ -7,11 +7,21 @@ read from the action buttons; the dealer seat from `.dealer-position-N`.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from ..model.cards import Card
-from ..model.state import IN_HAND, GameState, Seat, SeatStatus, Street, TableConfig
+from ..model.state import (
+    IN_HAND,
+    Action,
+    ActionType,
+    GameState,
+    Seat,
+    SeatStatus,
+    Street,
+    TableConfig,
+)
 
 _STATUS_MAP = {
     "active": SeatStatus.ACTIVE, "folded": SeatStatus.FOLDED, "all_in": SeatStatus.ALL_IN,
@@ -104,7 +114,7 @@ def to_game_state(raw: RawObservation, small_blind: Decimal, big_blind: Decimal,
         committed = parse_money(rs.bet) if rs.bet else Decimal("0")
         seats.append(Seat(
             seat_id=rs.seat_id, name=rs.name, stack=parse_money(rs.stack),
-            committed=committed, total_committed=committed,
+            committed=committed,
             status=_STATUS_MAP.get(rs.status, SeatStatus.ACTIVE),
             cards=tuple(parse_card_text(c) for c in rs.cards),
             is_button=rs.is_button,
@@ -161,10 +171,21 @@ def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal)
         else:
             p = pos.get(s.seat_id)
             committed = big_blind if p == "BB" else (small_blind if p == "SB" else Decimal("0"))
-        seats.append(replace(s, committed=committed, total_committed=committed))
+        seats.append(replace(s, committed=committed))
 
     pot = sum((x.committed for x in seats if x.status in IN_HAND), Decimal("0"))
     return replace(gs, seats=tuple(seats), pot=pot)
+
+
+def infer_preflop_raise(gs: GameState, big_blind: Decimal) -> GameState:
+    """If preflop and facing more than a limp, synthesize a RAISE action so the engine treats the
+    spot as facing a raise (the live scraper can't read the action log). Heads-up the raiser is the
+    lone opponent; multiway the seat is a placeholder (the engine reads raise COUNT, not who)."""
+    if gs.street == Street.PREFLOP and gs.to_call > big_blind and gs.live_opponents:
+        o = gs.live_opponents[0]
+        return replace(gs, actions=(Action(o.seat_id, ActionType.RAISE,
+                                           gs.to_call + gs.hero.committed, Street.PREFLOP),))
+    return gs
 
 
 class Scraper:
@@ -174,6 +195,7 @@ class Scraper:
         self.page = page
         self.sel = selectors
         self.hero_name = hero_name
+        self._next_body_scan = 0.0   # rate-limit read_blinds' full-page fallback (hot-loop cost)
 
     def action_buttons_present(self) -> bool:
         """Any fold/check/call/raise control is on screen — but this ALSO matches the pre-action
@@ -261,6 +283,13 @@ class Scraper:
                         return found
             except Exception:  # noqa: BLE001
                 pass
+        # Full-page fallback at most every 20s: this runs on the 2s upkeep tick, and a per-tick
+        # body inner_text is the exact hot-loop cost the email-gate fix removed. Blinds change
+        # rarely, so a slow fallback path is fine — a slow poll loop is not.
+        now = time.time()
+        if now < self._next_body_scan:
+            return None
+        self._next_body_scan = now + 20.0
         try:
             return parse_blinds_text(self.page.inner_text("body"))
         except Exception:  # noqa: BLE001

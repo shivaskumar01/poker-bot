@@ -13,38 +13,27 @@ import os
 import random
 import sys
 import time
-from dataclasses import replace
 from decimal import Decimal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pokerbot.io.browser import Browser                                      # noqa: E402
-from pokerbot.io.scraper import Scraper, reconstruct_preflop, to_game_state  # noqa: E402
+from pokerbot.equity.montecarlo import recommended_iterations   # noqa: E402
+from pokerbot.io.browser import Browser                          # noqa: E402
+from pokerbot.io.scraper import (                                 # noqa: E402
+    Scraper,
+    infer_preflop_raise,
+    reconstruct_preflop,
+    to_game_state,
+)
 from pokerbot.io.selectors import Selectors                    # noqa: E402
-from pokerbot.model.state import Action, ActionType, Street     # noqa: E402
 from pokerbot.opponents.classify import classify                # noqa: E402
 from pokerbot.opponents.store import StatsStore                 # noqa: E402
+from pokerbot.runtime.orchestrator import reads_for             # noqa: E402
 from pokerbot.strategy.engine import decide, primary_villain_read  # noqa: E402
 
 
 def _opt(flag, default):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
-
-
-def _reads(gs, store):
-    if store is None:
-        return None
-    reads = {opp.seat_id: store.get(opp.name) for opp in gs.live_opponents if opp.name}
-    return reads or None
-
-
-def _synth_actions(gs, bb):
-    """Live scraper can't read per-seat bets/log yet; if preflop and facing more than a limp,
-    synthesize a raise so the engine treats it as facing a raise (not an open)."""
-    if gs.street == Street.PREFLOP and gs.to_call > bb and gs.live_opponents:
-        opp = gs.live_opponents[0]
-        return (Action(opp.seat_id, ActionType.RAISE, gs.to_call + gs.hero.committed, Street.PREFLOP),)
-    return ()
 
 
 def main() -> None:
@@ -70,16 +59,15 @@ def main() -> None:
             if scraper.is_hero_turn():
                 try:
                     raw = scraper.read_observation()
-                    gs = reconstruct_preflop(to_game_state(raw, sb, bb), sb, bb)
-                    actions = _synth_actions(gs, bb)
-                    if actions:
-                        gs = replace(gs, actions=actions)
+                    gs = infer_preflop_raise(
+                        reconstruct_preflop(to_game_state(raw, sb, bb), sb, bb), bb)
                     sig = (tuple(map(str, gs.hero.cards)), tuple(map(str, gs.board)),
                            str(gs.to_call), gs.street.name)
                     if sig != last:
                         last = sig
-                        reads = _reads(gs, store)
-                        d = decide(gs, rng, iterations=1500, reads=reads)
+                        reads = reads_for(store, gs)     # same aliased/bucketed reads as the live bot
+                        iters = recommended_iterations(float(gs.pot) / float(bb), base=1500)
+                        d = decide(gs, rng, iterations=iters, reads=reads)
                         villain = primary_villain_read(gs, reads)
                         vtag = f"  vs {classify(villain)}" if villain and villain.hands >= 15 else ""
                         hole = " ".join(map(str, gs.hero.cards)) or "??"

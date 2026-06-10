@@ -1,13 +1,10 @@
-"""Session safety: stop-loss / stop-win / hand cap / kill switch + server-courtesy think-time.
+"""Session safety: stop-loss / stop-win / hand cap / kill switch.
 
-The think-time delay exists only so the bot doesn't act in milliseconds / hammer the server
-in a DISCLOSED game — it is NOT a stealth/anti-detection mechanism.
+(Think-time pacing lives in strategy/timing.think_seconds, applied by the orchestrator.)
 """
 from __future__ import annotations
 
 import os
-import random
-import time
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -20,13 +17,10 @@ class Limits:
 
 
 class SessionGuard:
-    def __init__(self, limits: Limits, big_blind, kill_file: str = "STOP",
-                 rng: random.Random | None = None, think: tuple[float, float] = (1.5, 6.0)) -> None:
+    def __init__(self, limits: Limits, big_blind, kill_file: str = "STOP") -> None:
         self.limits = limits
         self.bb = Decimal(str(big_blind))
         self.kill_file = kill_file
-        self.rng = rng or random.Random()
-        self.think_bounds = think
         self.start: Decimal | None = None
         self.current: Decimal | None = None
         self.hands = 0
@@ -64,7 +58,3 @@ class SessionGuard:
         if self.net_bb >= self.limits.stop_win_bb:
             return True, f"stop-win hit ({self.net_bb:+.0f}bb)"
         return False, ""
-
-    def think(self) -> None:
-        lo, hi = self.think_bounds
-        time.sleep(lo + (hi - lo) * self.rng.random())

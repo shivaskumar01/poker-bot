@@ -158,7 +158,9 @@ function cards(el, arr){ el.innerHTML = (arr&&arr.length)? arr.map(cardHTML).joi
 async function poll(){
   try{
     const s = await (await fetch('/api/state')).json();
-    const st = $('status'); st.textContent = s.status; st.className = s.running ? 'run' : '';
+    const st = $('status');
+    st.textContent = s.status + (s.warning ? '  ·  ⚠ ' + s.warning : '');
+    st.className = s.running ? 'run' : '';
     $('s-hands').textContent = s.session.hands;
     $('s-net').textContent = (s.session.net_bb>=0?'+':'') + s.session.net_bb;
     $('s-mode').textContent = s.mode;

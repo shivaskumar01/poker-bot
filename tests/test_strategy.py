@@ -44,7 +44,7 @@ def preflop_state(n, hero_seat, hero_cards, button=0, *, raises=(), limpers=(),
     seats = tuple(
         Seat(seat_id=s, name=f"p{s}",
              stack=D(hero_stack) if s == hero_seat else D("100"),
-             committed=committed[s], total_committed=committed[s],
+             committed=committed[s],
              status=SeatStatus.ACTIVE,
              cards=tuple(parse_cards(hero_cards)) if s == hero_seat else (),
              is_button=(s == button), is_hero=(s == hero_seat))
@@ -65,7 +65,7 @@ def postflop_state(n, hero_seat, hero_cards, board, button=0, *, to_call="0",
     seats = tuple(
         Seat(seat_id=s, name=f"p{s}",
              stack=D(hero_stack) if s == hero_seat else D(opp_stack),
-             committed=D("0"), total_committed=D("0"),
+             committed=D("0"),
              status=SeatStatus.ACTIVE if s in live else SeatStatus.FOLDED,
              cards=tuple(parse_cards(hero_cards)) if s == hero_seat else (),
              is_button=(s == button), is_hero=(s == hero_seat))
@@ -175,6 +175,35 @@ def test_call_draw_with_price():
     # nut flush draw + overcards getting 4:1 -> continue (call or raise), never fold
     gs = postflop_state(2, hero_seat=0, hero_cards="AhKh", board="Qh7h2c", to_call="3", pot="9")
     assert decide(gs, rng(), iterations=4000).action in (ActionType.CALL, ActionType.RAISE)
+
+
+# ---------------- primary villain attribution ----------------
+
+def test_villain_read_never_guesses_multiway_with_unreadable_bets():
+    # live multiway postflop: per-seat bets are unreadable (committed all 0). max() over equal
+    # values picks an arbitrary seat — the read MUST be None, never the wrong person's profile.
+    from pokerbot.opponents.stats import PlayerStats
+    from pokerbot.strategy.engine import primary_villain_read
+    reads = {1: PlayerStats("a", hands=100), 2: PlayerStats("b", hands=100)}
+    gs = postflop_state(3, hero_seat=0, hero_cards="AhAd", board="As7c2d", to_call="8", pot="20")
+    assert primary_villain_read(gs, reads) is None
+
+
+def test_villain_read_attributes_unique_bettor_and_lone_opponent():
+    from dataclasses import replace
+    from pokerbot.opponents.stats import PlayerStats
+    from pokerbot.strategy.engine import primary_villain_read
+    reads = {1: PlayerStats("a", hands=100), 2: PlayerStats("b", hands=100)}
+
+    # heads-up: the lone opponent's read, facing a bet or checked to
+    hu = postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2d", to_call="8", pot="20")
+    assert primary_villain_read(gs=hu, reads={1: reads[1]}) is reads[1]
+
+    # multiway with READABLE bets (e.g. self-play): the unique seat at the bet level is the bettor
+    gs = postflop_state(3, hero_seat=0, hero_cards="AhAd", board="As7c2d", to_call="8", pot="20")
+    seats = tuple(replace(s, committed=D("8")) if s.seat_id == 2 else s for s in gs.seats)
+    gs = replace(gs, seats=seats)
+    assert primary_villain_read(gs, reads) is reads[2]
 
 
 # ---------------- exploit integration ----------------
@@ -302,6 +331,26 @@ def test_opens_quality_hands_not_offsuit_junk():
     for hc in ("6c8c", "AhKd", "2h2c", "Tc9d"):           # suited / broadway-o / pair / connector-o
         assert decide(preflop_state(2, hero_seat=0, hero_cards=hc, button=0), rng()).action \
             == ActionType.RAISE, hc
+
+
+def test_overbet_jam_is_read_at_its_true_pot_fraction(monkeypatch):
+    # gs.pot INCLUDES the live bet (the table's 'total'): a 60 jam into a 20 pot arrives as
+    # pot=80,to_call=60 — a TRUE 3x-pot overbet. The old math divided by gs.pot (60/80 = 0.75)
+    # so overbet reads never fired. With equity pinned at 0.50: vs an aggressive (tag) jammer the
+    # bet-size read makes this a call; vs a passive station the same jam is value -> fold.
+    from pokerbot.opponents.stats import PlayerStats, Stat
+    from pokerbot.strategy import postflop as pf
+    monkeypatch.setattr(pf, "equity", lambda *a, **k: 0.50)
+
+    gs = postflop_state(2, hero_seat=0, hero_cards="KhQd", board="Kc9s4h2c",
+                        to_call="60", pot="80", hero_stack="200")
+    tag = PlayerStats("t", hands=200, agg_actions=50, call_actions=20)
+    tag.vpip, tag.pfr = Stat(48, 200), Stat(38, 200)
+    station = PlayerStats("s", hands=200, agg_actions=10, call_actions=120)
+    station.vpip, station.pfr = Stat(120, 200), Stat(20, 200)
+
+    assert decide(gs, rng(), iterations=10, reads={1: tag}).action == ActionType.CALL
+    assert decide(gs, rng(), iterations=10, reads={1: station}).action == ActionType.FOLD
 
 
 def test_pair_plus_gutshot_does_not_semibluff_raise():

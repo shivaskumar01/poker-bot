@@ -7,7 +7,6 @@ kill_file: STOP            # safe stop: create a file with this name (touch STOP
 
 table:
   url: ""                  # full PokerNow table URL
-  site: club               # club  -> www.pokernow.club  |  network -> network.pokernow.com
 
 stakes:
   small_blind: "0.50"      # fallback only — blinds are auto-detected from the live table

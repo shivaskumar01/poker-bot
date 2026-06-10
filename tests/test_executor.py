@@ -119,8 +119,11 @@ class _BetLoc:
         for key, kind in (("button.raise", "raise"), ("button.check", "check"),
                           ("button.call", "call"), ("submit", "confirm")):
             if key in self.sel:
-                if kind == "confirm" and not self.page.panel_open:
-                    raise RuntimeError("no panel")
+                if kind == "confirm" and (not self.page.panel_open or self.page.no_submit):
+                    raise RuntimeError("no confirm")
+                if kind in ("check", "call") and self.page.panel_open:
+                    # REALISTIC: the open bet panel REPLACES check/call/fold on the live table
+                    raise RuntimeError("hidden by the open bet panel")
                 self.page.click_kind(kind)
                 return
         raise RuntimeError("miss")
@@ -128,10 +131,15 @@ class _BetLoc:
 
 class _BetPage:
     """Models PokerNow's bet panel: opens with a MIN default; settable via slider/native; presets
-    set a pot fraction; confirm commits whatever is in the box."""
+    set a pot fraction; confirm commits whatever is in the box. While the panel is open the
+    check/call buttons are HIDDEN (replaced by presets + BACK), exactly like the real table."""
 
-    def __init__(self, *, settable=True, presets=True, pot=200.0, minbet=2.0):
+    def __init__(self, *, settable=True, presets=True, pot=200.0, minbet=2.0,
+                 no_submit=False, reselect_breaks=False):
         self.settable, self.presets, self.pot, self.minbet = settable, presets, pot, minbet
+        self.no_submit = no_submit              # the confirm submit is broken/unfindable
+        self.reselect_breaks = reselect_breaks  # preset clicks stop registering after the 4 probes
+        self.preset_clicks = 0
         self.panel_open = False
         self.amount = None
         self.confirmed = None
@@ -155,9 +163,14 @@ class _BetPage:
             self.panel_open, self.amount = True, self.minbet     # opens with the min default
         elif kind == "confirm" and self.panel_open and self.amount is not None:
             self.confirmed, self.panel_open = self.amount, False
+        elif kind == "BACK":
+            self.panel_open = False                              # closes the panel (no confirm)
         elif kind in ("check", "call", "fold"):
             self.actions.append(kind)
         elif kind.upper().endswith("POT") or kind.upper() == "ALL IN":
+            self.preset_clicks += 1
+            if self.reselect_breaks and self.preset_clicks > 4:
+                return                                           # the re-select silently misses
             frac = {"1/2 POT": 0.5, "3/4 POT": 0.75, "POT": 1.0, "ALL IN": 99}.get(kind.upper())
             if frac and self.panel_open:
                 self.amount = self.pot * frac if frac < 90 else self.pot * 5
@@ -169,7 +182,7 @@ class _BetPage:
         if "decision-current" in sel:
             return _BetEl("turn", self)              # it's the hero's turn in these tests
         if "submit" in sel:
-            return _BetEl("confirm", self) if self.panel_open else None
+            return _BetEl("confirm", self) if (self.panel_open and not self.no_submit) else None
         if "value" in sel or "inputmode" in sel or "slider" in sel or "range" in sel:
             return _BetEl("amount", self) if self.panel_open else None
         if "button.raise" in sel:
@@ -181,8 +194,10 @@ class _BetPage:
         return None
 
     def query_selector_all(self, sel):
-        if "button" in sel and self.panel_open and self.presets:
-            return [_BetEl(t, self) for t in ("1/2 POT", "3/4 POT", "POT", "ALL IN")]
+        if "button" in sel and self.panel_open:      # the panel's own controls: presets + BACK
+            els = [_BetEl(t, self)
+                   for t in (("1/2 POT", "3/4 POT", "POT", "ALL IN") if self.presets else ())]
+            return els + [_BetEl("BACK", self)]
         return []
 
     def wait_for_selector(self, sel, **kw):
@@ -223,3 +238,41 @@ def test_raise_calls_rather_than_min_raising_when_amount_cannot_be_set():
     assert _ex(page).execute(Decision(ActionType.RAISE, D("150.00"), "value raise")) is True
     assert page.confirmed is None
     assert page.actions == ["call"]      # facing a bet -> call instead of a min-raise
+
+
+def test_small_target_never_accepts_the_min_default():
+    # tolerance bug: target 2.00 with the panel's 1.00 min default must NOT verify — the old flat
+    # ±2.0 allowance accepted it, silently confirming a min bet as "2.00".
+    page = _BetPage(settable=False, presets=False, pot=4.0, minbet=1.0)
+    assert _ex(page).execute(Decision(ActionType.BET, D("2.00"), "small value bet")) is True
+    assert page.confirmed is None        # never confirmed the 1.00 default as if it were 2.00
+    assert page.actions == ["check"]
+
+
+def test_confirm_fallback_never_clicks_the_all_in_preset():
+    # confirm bug: the submit is broken; the old text-fallback matched the ALL IN preset (a real
+    # <button> in the panel) and "confirmed" by RE-SIZING the bet to a jam. Now: no confirm ->
+    # close the panel -> take the free check. The box must never be left re-sized to all-in.
+    page = _BetPage(settable=True, presets=True, pot=200.0, no_submit=True)
+    assert _ex(page).execute(Decision(ActionType.BET, D("150.00"), "value bet")) is True
+    assert page.confirmed is None
+    assert page.actions == ["check"]
+    assert page.amount != 200.0 * 5      # never left sitting on the ALL-IN amount
+
+
+def test_preset_reselect_is_verified_never_a_jam():
+    # re-select bug: probing the presets ends on ALL IN; if re-selecting the closest one doesn't
+    # stick, the box still holds the jam — the old code confirmed it (accidental all-in).
+    page = _BetPage(settable=False, presets=True, pot=200.0, reselect_breaks=True)
+    assert _ex(page).execute(Decision(ActionType.BET, D("100.00"), "half pot")) is True
+    assert page.confirmed is None        # never confirmed the stuck ALL-IN amount
+    assert page.actions == ["check"]
+
+
+def test_fallback_closes_the_panel_before_checking():
+    # panel bug: with the panel open, check/call are HIDDEN (this fake now enforces it, like the
+    # real table) — the couldn't-size fallback must close the panel via BACK or its click misses.
+    page = _BetPage(settable=False, presets=False, pot=200.0)
+    assert _ex(page).execute(Decision(ActionType.BET, D("150.00"), "value bet")) is True
+    assert page.panel_open is False      # BACK was clicked
+    assert page.actions == ["check"]     # ... and then the check landed

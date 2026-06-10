@@ -57,7 +57,8 @@ class BotController:
         return {"status": "idle", "mode": self.cfg.mode, "hand": None, "decision": None,
                 "session": {"hands": 0, "net_bb": 0.0}, "log": [], "error": None,
                 "blinds": {"sb": str(self.cfg.small_blind), "bb": str(self.cfg.big_blind)},
-                "stack": None, "buy_in": str(self.cfg.buy_in), "needs_rebuy": False}
+                "stack": None, "buy_in": str(self.cfg.buy_in), "needs_rebuy": False,
+                "warning": None}
 
     def _set(self, **kw) -> None:
         with self.lock:
@@ -105,6 +106,7 @@ class BotController:
             self.state["buy_in"] = d["buy_in"]
             self.state["needs_rebuy"] = d["needs_rebuy"]
             self.state["session"] = {"hands": d["hands"], "net_bb": d["net_bb"]}
+            self.state["warning"] = d.get("warning")
             if d["needs_rebuy"]:
                 self.state["status"] = "bot busted — confirm a re-buy to keep playing"
 
@@ -158,8 +160,7 @@ class BotController:
             scraper = Scraper(page, sel, hero_name=cfg.hero_name)
             executor = Executor(page, sel, mode=mode, players_consent=consent)
             self.guard = SessionGuard(Limits(cfg.stop_loss_bb, cfg.stop_win_bb, cfg.max_hands),
-                                      cfg.big_blind, kill_file=os.path.join(ROOT, cfg.kill_file),
-                                      think=(cfg.min_think, cfg.max_think))
+                                      cfg.big_blind, kill_file=os.path.join(ROOT, cfg.kill_file))
             bot = LiveBot(scraper, executor, store, cfg, self.guard,
                           on_decision=self._on_decision, on_status=self._on_status,
                           stop_event=self.stop_event)
@@ -232,6 +233,10 @@ def create_app():
 
     @app.post("/api/analyze")
     def analyze():
+        if ctrl.running():
+            # the bot thread holds its own SQLite connection — rebuilding the same DB from this
+            # request thread risks 'database is locked' mid-session. Re-learn between sessions.
+            return jsonify({"ok": False, "error": "stop the bot before re-learning from logs"})
         files = [f for d in LEARNING_DIRS for f in glob.glob(os.path.join(d, "*.csv"))]
         if not files:
             return jsonify({"ok": False, "error": f"no logs in {LEARNING_DIRS}"})

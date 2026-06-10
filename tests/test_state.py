@@ -18,7 +18,6 @@ def _seat(sid, stack, committed=D("0"), status=SeatStatus.ACTIVE, hero=False, bu
         name=f"p{sid}",
         stack=D(str(stack)),
         committed=D(str(committed)),
-        total_committed=D(str(committed)),
         status=status,
         is_hero=hero,
         is_button=button,

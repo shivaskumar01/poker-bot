@@ -17,8 +17,11 @@ from pathlib import Path
 from ..model.state import ActionType
 from ..strategy.decision import Decision
 from .domdump import dump_dom
+from .fields import type_into
 
-_CONFIRM_RE = re.compile(r"raise to|bet to|^\s*bet\s+[\d.,]|all[\s-]?in|confirm|^\s*go\s*$", re.I)
+_CONFIRM_RE = re.compile(r"raise to|bet to|^\s*bet\s+[\d.,]|confirm|^\s*go\s*$", re.I)
+# the bet panel's own controls — NEVER click these as a "confirm" (ALL IN would re-size the bet!)
+_PANEL_CTRL_RE = re.compile(r"pot|all[\s-]?in|min\s*raise|^\s*back\s*$|^\s*[-+]\s*$", re.I)
 _BETLOG = Path("data/bet_log.txt")          # paper trail of decided-vs-actually-did (gitignored)
 
 
@@ -83,6 +86,7 @@ class Executor:
                 self._fallback_dumps += 1
                 dump_dom(self.page, f"FALLBACK target={float(decision.amount):.2f} "
                                     f"box={self._amount_str()!r}")
+            self._close_panel()        # the panel hides check/call — close it or the clicks miss
             if a == ActionType.BET:
                 return self._click(self.sel.btn_check), "FALLBACK-check (couldn't size bet)"
             return self._click(self.sel.btn_call), "FALLBACK-call (couldn't size raise)"
@@ -159,6 +163,9 @@ class Executor:
             return "none"
         self._click_label(rx)                          # re-select the closest preset (last click left a different one)
         self._wait(70)
+        now = self._amount_value()                     # VERIFY the re-select stuck: the last probe was
+        if now is None or abs(now - target) > 0.20 * target:   # ALL IN, so an unverified miss would
+            return "none"                              # confirm a jam. Never confirm what we can't read.
         return label
 
     def activate_extra_time(self) -> bool:
@@ -181,13 +188,32 @@ class Executor:
         except Exception:  # noqa: BLE001
             return False
 
+    def _close_panel(self) -> None:
+        """Close an open bet panel (click BACK). The panel REPLACES the check/call/fold buttons on
+        screen, so a couldn't-size fallback MUST close it first or its check/call click hits nothing
+        and the bot burns its clock retrying."""
+        if not self._panel_open():
+            return
+        self._click_label(r"^\s*back\s*$")
+        self._wait(120)
+
     def _click_confirm(self) -> bool:
         if self._click(self.sel.raise_confirm):        # <input type=submit value="Raise/Bet">
             return True
-        for sel in (f"{self.sel.action_area} button", ".action-buttons button", "button"):  # other variants
+        try:    # the REAL confirm is an <input type=submit>, never a <button> — find it directly
+            for el in (self.page.query_selector_all("input[type='submit']") or []):
+                if el.is_visible():
+                    el.click(timeout=2000)
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        for sel in (f"{self.sel.action_area} button", ".action-buttons button"):  # other variants
             try:
                 for b in (self.page.query_selector_all(sel) or []):
-                    if b.is_visible() and _CONFIRM_RE.search((b.inner_text() or "").strip()):
+                    t = (b.inner_text() or "").strip()
+                    # exclude the panel's own preset/stepper controls: clicking 'ALL IN' here would
+                    # RE-SIZE the bet to a jam, not confirm it (a catastrophic mis-click)
+                    if b.is_visible() and _CONFIRM_RE.search(t) and not _PANEL_CTRL_RE.search(t):
                         b.click(timeout=2000)
                         return True
             except Exception:  # noqa: BLE001
@@ -234,7 +260,7 @@ class Executor:
             ("slider-cents", lambda: self._native(self.sel.raise_slider, cents)),
             ("native-decimal", lambda: self._native(self.sel.raise_amount, dec)),
             ("native-cents", lambda: self._native(self.sel.raise_amount, cents)),
-            ("type-cents", lambda: self._type_into(self.page.query_selector(self.sel.raise_amount), cents)),
+            ("type-cents", lambda: type_into(self.page.query_selector(self.sel.raise_amount), cents)),
         )
         used = "none"
         for name, fn in strategies:
@@ -283,36 +309,10 @@ class Executor:
 
     def _amount_is(self, target: float) -> bool:
         v = self._amount_value()
-        # accept the slider's nearest-step value (a chip or two off — the table's own granularity)
-        # but reject a wrong amount (a min bet, or a way-off preset)
-        return v is not None and abs(v - target) <= max(2.0, target * 0.04)
-
-    def _type_into(self, el, text: str) -> bool:
-        try:
-            el.click()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            el.fill("")
-        except Exception:  # noqa: BLE001
-            pass
-        for meth in ("press_sequentially", "type"):
-            fn = getattr(el, meth, None)
-            if fn is None:
-                continue
-            try:
-                fn(text, delay=40)
-                return True
-            except TypeError:
-                try:
-                    fn(text)
-                    return True
-                except Exception:  # noqa: BLE001
-                    pass
-            except Exception:  # noqa: BLE001
-                pass
-        try:
-            el.fill(text)
-            return True
-        except Exception:  # noqa: BLE001
+        if v is None:
             return False
+        # accept the slider's nearest-step value (a chip or two off — the table's own granularity)
+        # but reject a wrong amount. The absolute allowance SHRINKS for small targets: a flat 2.0
+        # would accept the panel's 1.00 min default when the target is a 2.00 bet (a silent min-bet).
+        tol = max(0.04 * target, min(2.0, 0.25 * target))
+        return abs(v - target) <= tol

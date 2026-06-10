@@ -12,6 +12,7 @@ import re
 import time
 
 from .domdump import dump_dom, scopes
+from .fields import type_into
 from .prompts import EmailLogin
 
 # A seat's own 'SIT' / 'SIT HERE' button (NOT 'request the seat', NOT 'sit down').
@@ -132,41 +133,9 @@ class Seater:
     def _fill_buyin(self) -> bool:
         text = self._buyin_text()
         for el in self._visible(self.sel.buyin_input):
-            if self._type_value(el, text):
+            if type_into(el, text):
                 return True
         return False
-
-    def _type_value(self, el, text: str) -> bool:
-        """Type into a (React-controlled) field with real keystrokes so onChange fires; fall back
-        to fill(). Clears any prefill first."""
-        try:
-            el.click()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            el.fill("")
-        except Exception:  # noqa: BLE001
-            pass
-        for meth in ("press_sequentially", "type"):
-            fn = getattr(el, meth, None)
-            if fn is None:
-                continue
-            try:
-                fn(text, delay=40)
-                return True
-            except TypeError:
-                try:
-                    fn(text)
-                    return True
-                except Exception:  # noqa: BLE001
-                    pass
-            except Exception:  # noqa: BLE001
-                pass
-        try:
-            el.fill(text)
-            return True
-        except Exception:  # noqa: BLE001
-            return False
 
     def _diag(self) -> str:
         btns = []

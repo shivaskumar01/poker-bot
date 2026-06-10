@@ -27,12 +27,10 @@ def cell(stat) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) > 1:
-        files = sorted(glob.glob(os.path.join(sys.argv[1], "*.csv")))
-    else:
-        files = sorted(f for d in DEFAULT_FOLDERS for f in glob.glob(os.path.join(d, "*.csv")))
+    folders = [sys.argv[1]] if len(sys.argv) > 1 else DEFAULT_FOLDERS
+    files = sorted(f for d in folders for f in glob.glob(os.path.join(d, "*.csv")))
     if not files:
-        print(f"no CSV logs in {folder!r}")
+        print(f"no CSV logs in {folders}")
         return
 
     all_hands: list = []

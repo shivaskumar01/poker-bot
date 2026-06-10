@@ -26,18 +26,22 @@ def test_create_and_read_code(monkeypatch):
     monkeypatch.setattr(ei, "_req", fake_req)
     box = TempInbox.create(random.Random(0))
     assert created["ok"] and box.address.endswith("@mail.tm")
-    assert box.wait_for_code(timeout=5, sleep=lambda s: None) == "731902"
+    assert box.poll_once() == "731902"
 
 
-def test_wait_for_code_times_out_when_empty(monkeypatch):
+def test_poll_once_returns_none_when_empty(monkeypatch):
     monkeypatch.setattr(ei, "_req",
                         lambda method, path, token=None, data=None: {"hydra:member": []})
     box = TempInbox("a@mail.tm", "JWT")
-    assert box.wait_for_code(timeout=0.2, sleep=lambda s: None) is None
+    assert box.poll_once() is None
 
 
-def test_wait_for_code_honors_stop(monkeypatch):
-    monkeypatch.setattr(ei, "_req",
-                        lambda method, path, token=None, data=None: {"hydra:member": []})
+def test_poll_once_swallows_network_errors(monkeypatch):
+    def boom(method, path, token=None, data=None):
+        raise OSError("mail.tm unreachable")
+
+    notes = []
+    monkeypatch.setattr(ei, "_req", boom)
     box = TempInbox("a@mail.tm", "JWT")
-    assert box.wait_for_code(timeout=60, sleep=lambda s: None, should_stop=lambda: True) is None
+    assert box.poll_once(log=notes.append) is None     # degrades, never raises into the login loop
+    assert any("poll error" in n for n in notes)

@@ -88,7 +88,7 @@ def _build_gamestate(state, button_index, sb, bb, start_stacks, records, folded)
             status = SeatStatus.ACTIVE
         seats.append(Seat(
             seat_id=p, name=f"P{p}", stack=Decimal(stacks[p]),
-            committed=Decimal(bets[p]), total_committed=Decimal(bets[p]),
+            committed=Decimal(bets[p]),
             status=status, cards=hero_hole if p == actor else (),
             is_button=(p == button_index), is_hero=(p == actor),
         ))

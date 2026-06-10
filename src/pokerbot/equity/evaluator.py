@@ -21,8 +21,3 @@ def to_eval7(card: Card) -> eval7.Card:
 def evaluate(cards: list[Card]) -> int:
     """Strength of the best 5-card hand from 5-7 cards (higher wins)."""
     return eval7.evaluate([_E[str(c)] for c in cards])
-
-
-def hand_category(cards: list[Card]) -> str:
-    """Human-readable category, e.g. 'Full House', 'Flush', 'Straight Flush'."""
-    return eval7.handtype(eval7.evaluate([_E[str(c)] for c in cards]))

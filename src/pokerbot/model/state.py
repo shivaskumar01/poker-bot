@@ -58,7 +58,6 @@ class Seat:
     name: str | None
     stack: Decimal
     committed: Decimal = ZERO        # chips put in this street
-    total_committed: Decimal = ZERO  # chips put in this hand
     status: SeatStatus = SeatStatus.EMPTY
     cards: tuple[Card, ...] = ()
     is_button: bool = False
@@ -155,10 +154,6 @@ class GameState:
         return self.positions.get(self.hero_seat_id)
 
     # --- money helpers ---
-    @property
-    def pot_after_call(self) -> Decimal:
-        return self.pot + self.to_call
-
     @property
     def pot_odds(self) -> float:
         """Fraction of the post-call pot hero must contribute (0 if checking is free)."""

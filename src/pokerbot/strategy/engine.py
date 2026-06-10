@@ -14,18 +14,27 @@ from .decision import Decision
 
 
 def primary_villain_read(gs: GameState, reads):
-    """The read for the opponent we're reacting to, or None."""
+    """The read for the opponent we're reacting to, or None.
+
+    Attribute a read ONLY when the aggressor is unambiguous: a lone live opponent, or (multiway)
+    a UNIQUE strict-max committed amount that reaches the current bet level. The live scraper
+    can't read per-seat bets (multiway committed is 0/blinds-only), and `max()` over equal values
+    just picks an arbitrary seat — exploit deltas would fire against the WRONG person's profile.
+    No read is strictly better than a wrong read; heads-up stays exact."""
     if not reads:
         return None
     live = gs.live_opponents
     if not live:
         return None
-    if gs.to_call > 0:                                   # react to the aggressor
-        aggressor = max(live, key=lambda s: s.committed)
-        return reads.get(aggressor.seat_id)
-    if len(live) == 1:                                   # heads-up pot, lone opponent
+    if len(live) == 1:                                   # lone opponent: theirs, bet or checked-to
         return reads.get(live[0].seat_id)
-    return None                                          # multiway checked-to: no single read
+    if gs.to_call > 0:                                   # multiway, facing a bet
+        top = max(live, key=lambda s: s.committed)
+        runner_up = max(s.committed for s in live if s.seat_id != top.seat_id)
+        level = gs.hero.committed + gs.to_call           # current bet level (to_call may be stack-capped)
+        if top.committed > runner_up and top.committed >= level:
+            return reads.get(top.seat_id)                # unique max AT the bet level = the bettor
+    return None                                          # ambiguous (unreadable bets): no single read
 
 
 def decide(gs: GameState, rng: random.Random | None = None,

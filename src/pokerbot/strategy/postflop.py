@@ -122,8 +122,11 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
 
     if gs.to_call > 0:                                  # ---- facing a bet ----
         required = exploit.adj_call_required(gs.pot_odds, read)
-        potf = float(gs.pot)                            # read the bet SIZE (big bets = bluffy here)
-        bet_fraction = float(gs.to_call) / potf if potf > 0 else 1.0
+        # read the bet SIZE. gs.pot INCLUDES the live bet we're facing (the table's 'total'),
+        # so the pot BEFORE the bet is pot - to_call — dividing by gs.pot would read every bet at
+        # ~half its true size (a 3x-pot jam looked like 3/4 pot and the overbet reads never fired).
+        pot_before = float(gs.pot) - float(gs.to_call)
+        bet_fraction = float(gs.to_call) / pot_before if pot_before > 0 else 2.5
         required = max(0.05, min(0.85, required + exploit.bet_size_delta(bet_fraction, read)))
         call_amt = min(gs.to_call, hero.stack)
         if raise_ok and strong_for_raise and eq >= RAISE_EQ:

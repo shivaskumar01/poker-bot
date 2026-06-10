@@ -14,7 +14,6 @@ import json
 import random
 import re
 import string
-import time
 import urllib.error
 import urllib.request
 
@@ -90,19 +89,10 @@ class TempInbox:
         return None
 
     def poll_once(self, senders=("pokernow",), log=lambda m: None) -> str | None:
-        """One inbox scan; returns the code if a matching email has arrived, else None."""
+        """One inbox scan; returns the code if a matching email has arrived, else None.
+        (EmailLogin owns the polling loop — it calls this once per tick.)"""
         try:
             return self._scan_for_code(senders)
         except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
             log(f"inbox poll error: {e}")
             return None
-
-    def wait_for_code(self, *, timeout: float = 120.0, sleep=time.sleep, should_stop=lambda: False,
-                      senders=("pokernow",), log=lambda m: None) -> str | None:
-        end = time.time() + timeout
-        while time.time() < end and not should_stop():
-            code = self.poll_once(senders, log)
-            if code:
-                return code
-            sleep(4.0)
-        return None

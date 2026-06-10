@@ -10,8 +10,9 @@ from pokerbot.runtime.safety import Limits, SessionGuard
 def _cfg(mode="observe", consent=False):
     return Config(mode=mode, players_consent=consent, table_url="", small_blind=D("0.5"),
                   big_blind=D("1"), ante=D("0"), buy_in=D("100"), hero_name=None, stop_loss_bb=200,
-                  stop_win_bb=400, max_hands=500, mc_iterations=300, min_think=0.0, max_think=0.0,
-                  max_action_wait=6.0, db_path=":none:", hand_log_path="", kill_file="STOP")
+                  stop_win_bb=400, max_hands=500, mc_iterations=300, mc_iterations_big_pot=9000,
+                  min_think=0.0, max_think=0.0, max_action_wait=6.0, db_path=":none:",
+                  hand_log_path="", kill_file="STOP")
 
 
 class _FakeScraper:
@@ -51,7 +52,7 @@ _RAW = RawObservation(
 
 
 def _guard():
-    return SessionGuard(Limits(200, 400, 500), D("1"), think=(0.0, 0.0))
+    return SessionGuard(Limits(200, 400, 500), D("1"))
 
 
 def test_observe_mode_decides_but_never_executes():
@@ -180,6 +181,103 @@ def test_latch_rearms_on_new_street_when_first_to_act():
 
     assert seen == ["PREFLOP", "FLOP"]                    # acted on BOTH streets, exactly once each
     assert len(ex.calls) == 2                             # ... and clicked both (no skipped flop)
+    assert bot.guard.hands == 1                           # two decisions, ONE hand (same hole cards)
+
+
+def test_hand_counted_even_when_first_decision_faces_a_raise():
+    # the under-count: hero's FIRST preflop decision faces a raise (to_call > bb) — the old
+    # `to_call <= bb` proxy skipped these hands entirely, so max_hands/the display drifted low.
+    import random
+    import threading
+    stop = threading.Event()
+
+    facing = RawObservation(
+        seats=[RawSeat(0, "hero", "100", is_hero=True, cards=["Ac", "Ad"]),
+               RawSeat(1, "vik", "100")],
+        board=[], pot="4.5", to_call="3", button_seat_id=1)
+
+    class _Scr:
+        page = None
+
+        def __init__(self):
+            self.polls = 0
+
+        def read_blinds(self):
+            return None
+
+        def read_hero_stack(self):
+            return None
+
+        def read_seconds_left(self):
+            return None
+
+        def action_buttons_present(self):
+            return False
+
+        def is_hero_turn(self):
+            self.polls += 1
+            if self.polls >= 4:
+                stop.set()
+            return True
+
+        def read_observation(self):
+            return facing
+
+    bot = LiveBot(_Scr(), _RecExec(False), None, _cfg(), _guard(), rng=random.Random(0),
+                  stop_event=stop)
+    bot.run()
+    assert bot.guard.hands == 1                           # counted despite facing a raise
+
+
+def test_big_pots_use_more_mc_iterations():
+    # mc_iterations_big_pot must actually be wired: >=40bb pots get the big rollout count
+    import pokerbot.runtime.orchestrator as orch
+
+    seen_iters = []
+    real_decide = orch.decide
+
+    def spy(gs, rng, iterations, reads=None):
+        seen_iters.append(iterations)
+        return real_decide(gs, rng, 50, reads=reads)
+
+    small = RawObservation(
+        seats=[RawSeat(0, "hero", "100", is_hero=True, cards=["As", "Ad"]),
+               RawSeat(1, "vik", "100")],
+        board=["As", "7c", "2d"], pot="6", to_call="0", button_seat_id=0)
+    big = RawObservation(
+        seats=[RawSeat(0, "hero", "100", is_hero=True, cards=["As", "Ad"]),
+               RawSeat(1, "vik", "100")],
+        board=["As", "7c", "2d"], pot="80", to_call="0", button_seat_id=0)
+
+    orig = orch.decide
+    orch.decide = spy
+    try:
+        bot = LiveBot(_FakeScraper(small), _RecExec(False), None, _cfg(), _guard())
+        bot.step()
+        bot2 = LiveBot(_FakeScraper(big), _RecExec(False), None, _cfg(), _guard())
+        bot2.step()
+    finally:
+        orch.decide = orig
+    assert seen_iters == [300, 9000]                      # base for 6bb, big for 80bb
+
+
+def test_table_check_surfaces_errors_as_warnings():
+    class _Boom:
+        def read_blinds(self):
+            raise RuntimeError("selector vanished")
+
+        def read_hero_stack(self):
+            return None
+
+    status = {}
+    bot = LiveBot(_Boom(), _RecExec(False), None, _cfg(), _guard(),
+                  on_status=lambda d: status.update(d))
+    bot._table_check()
+    assert "selector vanished" in (status.get("warning") or "")   # surfaced to the UI, not just stdout
+    ok = _TableScraper((D("0.5"), D("1")), D("100"))
+    bot.scraper = ok
+    bot._table_check()
+    assert status["warning"] is None                              # clears once upkeep succeeds
 
 
 def test_session_guard_stop_loss_and_win():
@@ -265,3 +363,13 @@ def test_kill_switch(tmp_path):
     g = SessionGuard(Limits(200, 400, 500), D("1"), kill_file=str(kf))
     stop, why = g.should_stop()
     assert stop and "kill" in why
+
+
+def test_config_loads_big_pot_iterations(tmp_path):
+    from pokerbot.runtime.config import load_config
+    p = tmp_path / "config.yaml"
+    p.write_text("engine:\n  mc_iterations: 1500\n  mc_iterations_big_pot: 60000\n")
+    cfg = load_config(str(p))
+    assert cfg.mc_iterations == 1500
+    assert cfg.mc_iterations_big_pot == 60000
+    assert load_config(str(p)).max_hands == 500          # untouched keys keep their defaults

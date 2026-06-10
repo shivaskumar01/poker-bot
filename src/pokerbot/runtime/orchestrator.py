@@ -6,19 +6,40 @@ from __future__ import annotations
 import json
 import random
 import time
-from dataclasses import replace
 from datetime import datetime, timezone
 
+from ..equity.montecarlo import recommended_iterations
 from ..io.domdump import dump_dom
 from ..io.prompts import EmailLogin
-from ..io.scraper import reconstruct_preflop, to_game_state
-from ..model.state import Action, ActionType, Street
+from ..io.scraper import infer_preflop_raise, reconstruct_preflop, to_game_state
+from ..model.state import ActionType, Street
 from ..opponents.aliases import canonical
 from ..opponents.classify import classify
 from ..strategy.engine import decide, primary_villain_read
 from ..strategy.timing import tempo_label, think_seconds
 
 _ACTION_SAFETY = 4.0   # always leave this many seconds on the clock to compute + click + register
+
+
+def profile_for(store, name: str, hu: bool):
+    """The table-size-appropriate profile: HU games use 'name#hu'; fall back to the other
+    bucket when the right one is too thin (a person plays HU very differently from full ring)."""
+    primary = store.get(name + "#hu" if hu else name)
+    if primary.hands >= 15:
+        return primary
+    other = store.get(name if hu else name + "#hu")      # cross-bucket fallback
+    return other if other.hands > primary.hands else primary
+
+
+def reads_for(store, gs):
+    """seat_id -> the right PlayerStats for every live opponent (aliased + table-size bucketed).
+    The ONE way reads are looked up — observe.py and the live bot must never drift apart."""
+    if store is None:
+        return None
+    hu = len(gs.dealt_seats) == 2          # heads-up table -> use HU-only reads (looser baselines)
+    reads = {o.seat_id: profile_for(store, canonical(o.name), hu)
+             for o in gs.live_opponents if o.name}
+    return reads or None
 
 
 class LiveBot:
@@ -41,6 +62,8 @@ class LiveBot:
         self._login = None               # lazily-created EmailLogin (persists its inbox)
         self._play_dumps = 0             # dump the first few action-button states (turn calibration)
         self._zero_reads = 0             # consecutive 0-stack reads (debounce all-in vs real bust)
+        self._hand_hole = None           # hole cards of the hand we last counted (hand boundary)
+        self._last_warn = None           # last upkeep error, surfaced to the UI via on_status
 
     def request_rebuy(self) -> None:
         """Called from another thread (the UI) — confirms a second buy-in; the bot thread
@@ -49,7 +72,9 @@ class LiveBot:
 
     def _table_check(self) -> None:
         """Out-of-turn upkeep: auto-detect (changing) blinds, track the stack for stop-loss,
-        and detect a bust so the UI can ask for a re-buy. Runs in the bot (Playwright) thread."""
+        and detect a bust so the UI can ask for a re-buy. Runs in the bot (Playwright) thread.
+        Errors are surfaced to the UI via on_status['warning'], not just stdout."""
+        stack = None
         try:
             blinds = self.scraper.read_blinds()
             if blinds and blinds[1] > 0 and blinds[1] != self.config.big_blind:
@@ -71,7 +96,12 @@ class LiveBot:
                 if self._zero_reads >= 4:                # sustained ~8s of 0 => a real bust
                     self._needs_rebuy = True
             # stack is None -> couldn't read this tick; leave state unchanged
-            if self.on_status:
+            self._last_warn = None
+        except Exception as e:  # noqa: BLE001 - upkeep must never crash the loop
+            self._last_warn = f"table check: {e}"
+            print("table-check error:", e)
+        if self.on_status:
+            try:
                 self.on_status({
                     "small_blind": str(self.config.small_blind),
                     "big_blind": str(self.config.big_blind),
@@ -80,9 +110,10 @@ class LiveBot:
                     "needs_rebuy": self._needs_rebuy,
                     "net_bb": round(self.guard.net_bb, 1),
                     "hands": self.guard.hands,
+                    "warning": self._last_warn,
                 })
-        except Exception as e:  # noqa: BLE001 - upkeep must never crash the loop
-            print("table-check error:", e)
+            except Exception:  # noqa: BLE001 - a UI callback bug must not kill upkeep
+                pass
         page = getattr(self.scraper, "page", None)   # PokerNow email-login gate (if it pops up mid-session)
         if page is not None:
             if self._login is None:
@@ -139,37 +170,28 @@ class LiveBot:
 
     # --- helpers ---
     def _reads(self, gs):
-        if self.store is None:
-            return None
-        hu = len(gs.dealt_seats) == 2          # heads-up table -> use HU-only reads (looser baselines)
-        reads = {o.seat_id: self._profile(canonical(o.name), hu)
-                 for o in gs.live_opponents if o.name}
-        return reads or None
-
-    def _profile(self, name, hu):
-        """The table-size-appropriate profile: HU games use 'name#hu'; fall back to the other
-        bucket when the right one is too thin (a person plays HU very differently from full ring)."""
-        primary = self.store.get(name + "#hu" if hu else name)
-        if primary.hands >= 15:
-            return primary
-        other = self.store.get(name if hu else name + "#hu")   # cross-bucket fallback
-        return other if other.hands > primary.hands else primary
+        return reads_for(self.store, gs)
 
     def _build_state(self, raw):
         cfg = self.config
         gs = reconstruct_preflop(
             to_game_state(raw, cfg.small_blind, cfg.big_blind, cfg.hero_name),
             cfg.small_blind, cfg.big_blind)
-        if gs.street == Street.PREFLOP and gs.to_call > cfg.big_blind and gs.live_opponents:
-            o = gs.live_opponents[0]   # heads-up: treat as facing a raise so the engine 3bets/calls
-            gs = replace(gs, actions=(Action(o.seat_id, ActionType.RAISE,
-                                             gs.to_call + gs.hero.committed, Street.PREFLOP),))
-        return gs
+        return infer_preflop_raise(gs, cfg.big_blind)
+
+    def _iterations(self, gs) -> int:
+        """More Monte-Carlo rollouts when the pot is big — lower variance exactly where a
+        close call/fold is worth real money. Small pots stay snappy."""
+        cfg = self.config
+        bb = float(cfg.big_blind) if cfg.big_blind else 1.0
+        pot_bb = float(gs.pot) / bb if bb > 0 else 0.0
+        return recommended_iterations(pot_bb, base=cfg.mc_iterations,
+                                      big=cfg.mc_iterations_big_pot)
 
     def decide_for(self, raw):
         gs = self._build_state(raw)
         reads = self._reads(gs)
-        d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
+        d = decide(gs, self.rng, self._iterations(gs), reads=reads)
         return gs, d, reads
 
     def step(self):
@@ -233,12 +255,15 @@ class LiveBot:
                     # otherwise re-decide the SAME hand to a fresh (random-sized) raise and show that.
                     if sig != last and len(gs.hero.cards) == 2 and not acted:
                         last = sig
-                        if gs.street == Street.PREFLOP:           # hand-boundary bankroll/hand tracking
+                        # Hand boundary = NEW hole cards seen preflop. (The old `to_call <= bb`
+                        # proxy never counted hands where someone raised before hero's first
+                        # decision, so max_hands and the hands display under-counted.)
+                        if gs.street == Street.PREFLOP and sig[0] != self._hand_hole:
+                            self._hand_hole = sig[0]
                             self.guard.observe_bankroll(gs.hero.stack)
-                            if gs.to_call <= self.config.big_blind:
-                                self.guard.count_hand()
+                            self.guard.count_hand()
                         reads = self._reads(gs)
-                        d = decide(gs, self.rng, self.config.mc_iterations, reads=reads)
+                        d = decide(gs, self.rng, self._iterations(gs), reads=reads)
                         budget = self._action_budget()
                         big_pot = float(gs.pot) >= 18 * float(self.config.big_blind)
                         if big_pot and self.executor.can_act and not self._needs_rebuy:

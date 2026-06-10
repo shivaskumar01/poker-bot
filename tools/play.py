@@ -47,8 +47,7 @@ def main() -> None:
     scraper = Scraper(page, selectors, hero_name=cfg.hero_name)
     executor = Executor(page, selectors, mode=cfg.mode, players_consent=cfg.players_consent)
     guard = SessionGuard(Limits(cfg.stop_loss_bb, cfg.stop_win_bb, cfg.max_hands),
-                         cfg.big_blind, kill_file=os.path.join(ROOT, cfg.kill_file),
-                         think=(cfg.min_think, cfg.max_think))
+                         cfg.big_blind, kill_file=os.path.join(ROOT, cfg.kill_file))
     os.makedirs(os.path.dirname(os.path.join(ROOT, cfg.hand_log_path)), exist_ok=True)
     logfile = open(os.path.join(ROOT, cfg.hand_log_path), "a", encoding="utf-8")
 

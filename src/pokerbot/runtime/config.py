@@ -21,6 +21,7 @@ class Config:
     stop_win_bb: float
     max_hands: int
     mc_iterations: int
+    mc_iterations_big_pot: int
     min_think: float
     max_think: float
     max_action_wait: float     # hard cap on think-time when the live action timer can't be read
@@ -50,6 +51,7 @@ def load_config(path: str = "config.yaml") -> Config:
         stop_win_bb=float(limits.get("stop_win_bb", 400)),
         max_hands=int(limits.get("max_hands", 500)),
         mc_iterations=int(engine.get("mc_iterations", 1500)),
+        mc_iterations_big_pot=int(engine.get("mc_iterations_big_pot", 60_000)),
         min_think=float(timing.get("min_think_seconds", 1.5)),
         max_think=float(timing.get("max_think_seconds", 6.0)),
         max_action_wait=float(timing.get("max_action_wait_seconds", 6.0)),

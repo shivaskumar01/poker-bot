@@ -27,3 +27,14 @@ def test_profiles_is_a_list():
 def test_config_endpoint():
     c = _client().get("/api/config").get_json()
     assert "bb" in c and "mode" in c
+
+
+def test_analyze_is_blocked_while_the_bot_runs():
+    # the bot thread holds its own SQLite connection — a mid-session rebuild risks
+    # 'database is locked', so /api/analyze must refuse while running
+    import threading
+    app, ctrl = create_app()
+    app.testing = True
+    ctrl.thread = threading.current_thread()      # alive -> ctrl.running() is True
+    r = app.test_client().post("/api/analyze").get_json()
+    assert r["ok"] is False and "stop the bot" in r["error"]
