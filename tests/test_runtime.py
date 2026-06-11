@@ -261,6 +261,69 @@ def test_big_pots_use_more_mc_iterations():
     assert seen_iters == [300, 9000]                      # base for 6bb, big for 80bb
 
 
+def test_refused_execute_re_decides_on_the_real_turn():
+    # the pre-action fix refuses to click when the controls aren't live. The orchestrator must
+    # then re-DECIDE the same spot on the real turn (identical sig!) instead of skipping it as
+    # a duplicate — otherwise the bot freezes on its real turn and gets auto-folded.
+    import random
+    import threading
+    stop = threading.Event()
+
+    class _FlakyExec:
+        def __init__(self):
+            self.attempts = 0
+            self.landed = []
+
+        @property
+        def can_act(self):
+            return True
+
+        def activate_extra_time(self):
+            return False
+
+        def execute(self, decision):
+            self.attempts += 1
+            if self.attempts == 1:
+                return False              # controls weren't live (pre-action window)
+            self.landed.append(decision)
+            return True
+
+    class _Scr:
+        page = None
+
+        def __init__(self):
+            self.t = 0
+
+        def read_blinds(self):
+            return None
+
+        def read_hero_stack(self):
+            return None
+
+        def read_seconds_left(self):
+            return None
+
+        def action_buttons_present(self):
+            return False
+
+        def is_hero_turn(self):
+            self.t += 1
+            if self.t >= 14:
+                stop.set()
+            return self.t != 3            # one not-my-turn tick between the two attempts
+
+        def read_observation(self):
+            return _RAW                   # IDENTICAL observation both times (same sig)
+
+    seen = []
+    ex = _FlakyExec()
+    bot = LiveBot(_Scr(), ex, None, _cfg("execute", True), _guard(), rng=random.Random(0),
+                  on_decision=lambda gs, d, reads, secs=None: seen.append(d), stop_event=stop)
+    bot.run()
+    assert len(seen) == 2                 # decided again on the real turn (sig re-armed)
+    assert len(ex.landed) == 1            # and the action landed exactly once
+
+
 def test_table_check_surfaces_errors_as_warnings():
     class _Boom:
         def read_blinds(self):

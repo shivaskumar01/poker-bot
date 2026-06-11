@@ -42,9 +42,31 @@ class Executor:
         return self.mode == "execute" and self.players_consent
 
     def _is_hero_turn(self) -> bool:
-        """The hero is the CURRENT ACTOR (their seat has .decision-current)."""
+        """The hero is the CURRENT ACTOR — and the on-screen controls are the REAL action
+        controls, not PokerNow's PRE-ACTION toggles.
+
+        `.decision-current` alone LIES for a window right after the hero acts (it lingers on the
+        hero seat until the server confirms — proven by a live DOM dump) and around a pause. In
+        that window PokerNow shows amount-less RAISE/CHECK/FOLD toggles that QUEUE an action for
+        the next turn; clicking the queued RAISE fires later at the REMEMBERED amount (the last
+        street's bet) — the live 'turn lead = flop lead' bug. Real-turn markers (any one):
+          * the bet panel is open (it can only exist on a real turn), or
+          * an action-area button carries an AMOUNT — 'CALL 25.00' / the 'BET 2.00' min-shortcut /
+            'ACTIVATE EXTRA TIME (10S)' — pre-action toggles are always amount-less, or
+          * the action area shows the YOUR TURN tag."""
         try:
-            return self.page.query_selector(f".you-player.{self.sel.current_actor_class}") is not None
+            if self.page.query_selector(f".you-player.{self.sel.current_actor_class}") is None:
+                return False
+            if self._panel_open():
+                return True
+            for b in (self.page.query_selector_all(f"{self.sel.action_area} button") or []):
+                try:
+                    if b.is_visible() and re.search(r"\d", b.inner_text() or ""):
+                        return True
+                except Exception:  # noqa: BLE001
+                    continue
+            area = self.page.query_selector(self.sel.action_area)
+            return bool(area and "your turn" in (area.inner_text() or "").lower())
         except Exception:  # noqa: BLE001
             return False
 
@@ -76,17 +98,25 @@ class Executor:
             return self._click(self.sel.btn_call), "call"
         if a in (ActionType.BET, ActionType.RAISE):
             self._last_set = None
-            if self._raise_to(decision.amount):
+            res = self._raise_to(decision.amount)
+            if res == "confirmed":
                 got = self._last_set if self._last_set is not None else float(decision.amount)
                 return True, f"{a.name.lower()}→{got:.2f}"
-            # Couldn't open/size the bet -> NEVER confirm a min bet. A BET is checkable, so CHECK;
-            # a RAISE faces a bet (incl. an all-in jam), so CALL. Either is far better than min-betting.
-            # This is a real disconnect (dashboard said bet/raise) -> snapshot the DOM to diagnose.
+            if res == "abort":
+                # the controls weren't live (turn flipped / pre-action toggles / pause) — touch
+                # NOTHING and let the orchestrator retry on the real turn. Falling back here would
+                # click a pre-action toggle and queue a stale action.
+                return False, "controls not live (turn passed / pre-action) — no click"
+            # res == "fallback": the panel was real but the amount couldn't be sized -> NEVER
+            # confirm a min bet. A BET is checkable, so CHECK; a RAISE faces a bet (incl. an
+            # all-in jam), so CALL. Snapshot the DOM to diagnose the disconnect.
             if self._fallback_dumps < 10:
                 self._fallback_dumps += 1
                 dump_dom(self.page, f"FALLBACK target={float(decision.amount):.2f} "
                                     f"box={self._amount_str()!r}")
             self._close_panel()        # the panel hides check/call — close it or the clicks miss
+            if not self._is_hero_turn():
+                return False, "turn passed before the fallback — no click"
             if a == ActionType.BET:
                 return self._click(self.sel.btn_check), "FALLBACK-check (couldn't size bet)"
             return self._click(self.sel.btn_call), "FALLBACK-call (couldn't size raise)"
@@ -105,22 +135,33 @@ class Executor:
             pass
 
     # --- raise/bet: open panel -> set amount (VERIFIED) -> confirm ----------
-    def _raise_to(self, amount: Decimal) -> bool:
-        """Confirm ONLY a verified amount. Retries the whole open->size->confirm a few times; if it
-        can never set a sane amount it returns False (the caller checks/calls) — it NEVER confirms
-        the panel's default min bet. This is the fix for the recurring 'said 200, bet 5' leak."""
+    def _raise_to(self, amount: Decimal) -> str:
+        """Confirm ONLY a verified amount. Returns:
+          'confirmed' — the verified amount was submitted;
+          'abort'     — the controls aren't live (turn flipped / RAISE was a pre-action toggle):
+                        NOTHING may be clicked afterwards — the toggle queues an action that fires
+                        NEXT turn at PokerNow's remembered amount (the 'turn lead = flop lead' bug);
+          'fallback'  — a real panel existed but no sane amount could be set (the caller takes a
+                        free check / a call) — it NEVER confirms the panel's default min bet."""
         for _ in range(3):
+            if not self._is_hero_turn():               # the turn evaporated mid-flow (pause/flip)
+                return "abort"
             if not self._panel_open():                 # open the bet panel (skip if a retry left it open)
                 if not self._click(self.sel.btn_raise):
-                    return False                       # no raise control at all (e.g. facing a jam)
+                    return "fallback"                  # no raise control at all (e.g. facing a jam) -> call
                 self._await_panel()                    # WAIT for the amount field to actually render
+                if not self._panel_open():
+                    # the click hit something that ISN'T the real raise button (a pre-action
+                    # toggle): click it again to UN-QUEUE the stale raise, then walk away.
+                    self._click(self.sel.btn_raise)
+                    return "abort"
             if not self._raise_dumped:
                 self._raise_dumped = True
                 dump_dom(self.page, "after-raise-click")
             if self._set_amount(amount) and self._click_confirm():   # set+VERIFY, then confirm
-                return True
+                return "confirmed"
             self._wait(160)                            # settle, then retry the open/size
-        return False
+        return "fallback"
 
     def _await_panel(self) -> None:
         """Block until the bet panel's amount field is actually on screen — a fixed delay was

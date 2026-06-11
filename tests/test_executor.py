@@ -26,6 +26,22 @@ class _Loc:
         raise RuntimeError("not actionable")
 
 
+class _Marker:
+    """An action-area button carrying an AMOUNT (e.g. 'CALL 2.00') — the real-turn marker."""
+
+    def __init__(self, text="CALL 2.00"):
+        self._t = text
+
+    def is_visible(self):
+        return True
+
+    def inner_text(self):
+        return self._t
+
+    def click(self, timeout=None, force=False):
+        pass
+
+
 class _Page:
     def __init__(self, has_check=True, has_call=True, my_turn=True):
         self.clicked = []
@@ -40,6 +56,11 @@ class _Page:
         if "decision-current" in sel:                # the hero-is-current-actor turn check
             return object() if self.my_turn else None
         return None
+
+    def query_selector_all(self, sel):
+        if "button" in sel and self.my_turn:         # real turn -> an amount-bearing control exists
+            return [_Marker()]
+        return []
 
 
 def _ex(page):
@@ -135,11 +156,13 @@ class _BetPage:
     check/call buttons are HIDDEN (replaced by presets + BACK), exactly like the real table."""
 
     def __init__(self, *, settable=True, presets=True, pot=200.0, minbet=2.0,
-                 no_submit=False, reselect_breaks=False):
+                 no_submit=False, reselect_breaks=False, panel_never_opens=False):
         self.settable, self.presets, self.pot, self.minbet = settable, presets, pot, minbet
         self.no_submit = no_submit              # the confirm submit is broken/unfindable
         self.reselect_breaks = reselect_breaks  # preset clicks stop registering after the 4 probes
+        self.panel_never_opens = panel_never_opens   # the RAISE control is a pre-action toggle
         self.preset_clicks = 0
+        self.raise_clicks = 0
         self.panel_open = False
         self.amount = None
         self.confirmed = None
@@ -160,6 +183,9 @@ class _BetPage:
 
     def click_kind(self, kind):
         if kind == "raise":
+            self.raise_clicks += 1
+            if self.panel_never_opens:                           # a pre-action toggle: no panel
+                return
             self.panel_open, self.amount = True, self.minbet     # opens with the min default
         elif kind == "confirm" and self.panel_open and self.amount is not None:
             self.confirmed, self.panel_open = self.amount, False
@@ -194,10 +220,13 @@ class _BetPage:
         return None
 
     def query_selector_all(self, sel):
-        if "button" in sel and self.panel_open:      # the panel's own controls: presets + BACK
-            els = [_BetEl(t, self)
-                   for t in (("1/2 POT", "3/4 POT", "POT", "ALL IN") if self.presets else ())]
-            return els + [_BetEl("BACK", self)]
+        if "button" in sel:
+            els = [_Marker()]                        # an amount-bearing control: it IS a real turn
+            if self.panel_open:                      # the panel's own controls: presets + BACK
+                els += [_BetEl(t, self)
+                        for t in (("1/2 POT", "3/4 POT", "POT", "ALL IN") if self.presets else ())]
+                els += [_BetEl("BACK", self)]
+            return els
         return []
 
     def wait_for_selector(self, sel, **kw):
@@ -267,6 +296,43 @@ def test_preset_reselect_is_verified_never_a_jam():
     assert _ex(page).execute(Decision(ActionType.BET, D("100.00"), "half pot")) is True
     assert page.confirmed is None        # never confirmed the stuck ALL-IN amount
     assert page.actions == ["check"]
+
+
+def test_pre_action_lookalikes_are_never_clicked():
+    # live bug: right after the hero acts, PokerNow LEAVES `.decision-current` on the hero seat
+    # and shows amount-less pre-action RAISE/CHECK/FOLD toggles. Clicking them queues an action
+    # that fires NEXT turn at the remembered amount (the 'turn lead = flop lead' disconnect).
+    # With no real-turn marker (no amounts, no panel, no YOUR TURN) the executor must refuse.
+    class _StaleTurnPage:
+        def __init__(self):
+            self.clicked = []
+
+        def query_selector(self, sel):
+            return object() if "decision-current" in sel else None
+
+        def query_selector_all(self, sel):
+            if "button" in sel:
+                return [_Marker("RAISE"), _Marker("CHECK"), _Marker("FOLD")]  # amount-less toggles
+            return []
+
+        def locator(self, sel):
+            raise AssertionError(f"clicked {sel} during a fake turn")
+
+    page = _StaleTurnPage()
+    assert _ex(page).execute(Decision(ActionType.BET, D("60"), "turn lead")) is False
+    assert _ex(page).execute(Decision(ActionType.CHECK, D("0"), "check")) is False
+    assert page.clicked == []
+
+
+def test_raise_click_without_a_panel_is_unqueued_and_aborted():
+    # the RAISE control turned out to be a pre-action toggle (no panel appeared): the executor
+    # must click it AGAIN to un-queue the stale raise, then walk away — never fall back to
+    # check/call (those would queue more pre-actions).
+    page = _BetPage(panel_never_opens=True, pot=200.0)
+    assert _ex(page).execute(Decision(ActionType.BET, D("60.00"), "turn lead")) is False
+    assert page.raise_clicks == 2        # queue + un-queue
+    assert page.confirmed is None        # nothing was ever confirmed
+    assert page.actions == []            # and no check/call was clicked
 
 
 def test_fallback_closes_the_panel_before_checking():

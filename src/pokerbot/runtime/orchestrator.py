@@ -298,7 +298,10 @@ class LiveBot:
                         pending, acted = None, True        # clicked through -> latch; else retry next loop
                         acted_board, acted_call = sig[1], gs.to_call   # remember WHAT we acted on
                 else:
-                    pending, acted = None, False          # turn passed -> drop stale action, re-arm
+                    # turn passed -> drop any stale action, re-arm, and FORGET the last sig: if an
+                    # execute was refused (controls weren't live) the same sig may come back on the
+                    # REAL turn and must be re-decided fresh, not skipped as a duplicate.
+                    pending, acted, last = None, False, None
             except Exception as e:  # noqa: BLE001 - keep the session alive through transient errors
                 print("loop error:", e)
             time.sleep(0.1)         # fast poll so the bot detects its turn quickly on fast tables
