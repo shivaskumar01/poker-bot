@@ -5,6 +5,11 @@ game and for self-play research. It handles the full 2-to-10-handed range, adapt
 as seats join and leave, learns each opponent from real hand histories, and plays
 an exploitative, clean-sizing game tuned to how your group plays.
 
+## API keys
+
+None. The bot drives PokerNow through your own logged-in browser session, so there is
+nothing to paste. Table, stakes, and mode settings live in `config.yaml`.
+
 ## Responsible use (read this)
 
 - PokerNow's Terms of Service prohibit undisclosed automation. This is for disclosed
