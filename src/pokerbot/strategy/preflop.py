@@ -186,9 +186,9 @@ def _vs_raise(gs, ctx, cls, pct, mx, read, raise_ok):
     thr = exploit.adj_defense_threshold(
         ranges.defense_equity_threshold(gs.pot_odds, in_position=ctx.in_position,
                                         vs_late_open=ctx.vs_late_open, heads_up=heads_up), read)
-    if ranges.hand_equity(cls) >= thr:                          # defend by price
+    if ranges.realization_equity(cls) >= thr:                   # defend by price (realization-adjusted)
         return Decision(ActionType.CALL, _call_amount(gs),
-                        f"call {cls} (eq {ranges.hand_equity(cls):.2f} >= price {thr:.2f})")
+                        f"call {cls} (real {ranges.realization_equity(cls):.2f} >= price {thr:.2f})")
 
     if raise_ok and _is_3bet_bluff(cls) and mx.chance(exploit.adj_3bet_bluff_freq(0.30, read)):
         return Decision(ActionType.RAISE, sizing.threebet_to(gs, multiple=_threebet_mult(read, ctx.in_position)),
@@ -204,7 +204,7 @@ def _vs_3bet(gs, ctx, cls, pct, mx, read, raise_ok):
         return Decision(ActionType.RAISE, sizing.fourbet_to(gs), f"4-bet value {cls}")
 
     thr = ranges.threebet_call_equity_threshold(gs.pot_odds, in_position=ctx.in_position)
-    if ranges.hand_equity(cls) >= thr:
+    if ranges.realization_equity(cls) >= thr:
         return Decision(ActionType.CALL, _call_amount(gs), f"call 3-bet {cls} (price)")
 
     if raise_ok and _is_4bet_bluff(cls) and mx.chance(exploit.adj_3bet_bluff_freq(0.15, read)):

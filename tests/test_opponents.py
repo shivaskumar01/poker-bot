@@ -67,6 +67,17 @@ def test_exploit_adjustments_are_directional():
     assert exploit.adj_call_required(0.50, PlayerStats("x", hands=3)) == 0.50
 
 
+def test_bluff_sizing_is_efficient_never_inflated_into_callers():
+    # a bluff should risk the LEAST that still folds them out: smaller into nits (fold anyway) and
+    # stations (call anyway), never bigger into a sticky caller. Value bets DO grow vs a station.
+    station = make("s", 200, 0.45, 0.05, 5, 60)
+    nit = make("n", 200, 0.10, 0.08, 10, 5)
+    assert exploit.bluff_size_multiplier(station) < 1.0    # don't bloat a bluff into a caller
+    assert exploit.bluff_size_multiplier(nit) < 1.0        # they fold to small -> bet small
+    assert exploit.value_size_multiplier(station) > 1.0    # but DO size value up vs the station
+    assert exploit.bluff_size_multiplier(None) == 1.0      # no read -> neutral
+
+
 def test_call_required_is_person_driven():
     # bluff-catch by PERSON: call lighter vs aggressive bluffers, tighter vs passive value-bettors
     station = make("s", 200, 0.45, 0.05, 5, 60)

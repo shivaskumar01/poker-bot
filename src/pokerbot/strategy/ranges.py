@@ -8,8 +8,6 @@ a sound TAG baseline and are meant to be adjusted; the exploit layer deviates fr
 """
 from __future__ import annotations
 
-from decimal import Decimal
-
 from .notation import all_hand_classes, gap, is_pair, is_suited
 from .preflop_strength import PREFLOP_EQUITY
 
@@ -38,10 +36,6 @@ NUM_CLASSES = len(_RANKED)
 def hand_percentile(cls: str) -> float:
     """Position of a class in the strength ranking, in (0, 1]; ~0.006 = AA, 1.0 = 32o."""
     return _PCT[cls]
-
-
-def in_top(cls: str, fraction: float) -> bool:
-    return _PCT[cls] <= fraction
 
 
 # --- open-raise first-in ---
@@ -113,6 +107,17 @@ def hand_equity(cls: str) -> float:
     return PREFLOP_EQUITY[cls]
 
 
+def realization_equity(cls: str) -> float:
+    """The metric we DEFEND by (flat-call a raise): how much equity a hand actually realizes,
+    not raw all-in equity. Suited/connected/paired hands realize MORE than their all-in equity
+    (they flop draws, sets and nutted hands and fold out cleanly when they miss); offsuit
+    high-card junk realizes LESS (it makes dominated top pairs out of position). This is the same
+    playability score we rank opens by — defending by raw equity instead would flat offsuit junk
+    like K3o (raw 0.54) while folding 76s (raw 0.45) that plays far better. Capped at the
+    threshold cap upstream, so a premium never folds."""
+    return playability_score(cls)
+
+
 def defense_equity_threshold(price: float, *, in_position: bool, vs_late_open: bool,
                              heads_up: bool) -> float:
     """Min equity to flat-call a raise given the price; wider (lower) vs wide/late openers.
@@ -128,7 +133,3 @@ def threebet_call_equity_threshold(price: float, *, in_position: bool) -> float:
     Capped like the open-defense threshold: a bad multiway pot read can push the raw price
     past 1.0, and premiums must never fold to a 3-bet on a misread pot."""
     return min(price + (0.10 if in_position else 0.16), 0.58)
-
-
-# Open-raise size mix (bb multiples) so the bot isn't a fixed 2.5x every time.
-OPEN_SIZE_WEIGHTS = [(Decimal("2.0"), 1.0), (Decimal("2.5"), 2.0), (Decimal("3.0"), 1.0)]

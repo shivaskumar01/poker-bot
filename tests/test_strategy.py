@@ -177,6 +177,40 @@ def test_call_draw_with_price():
     assert decide(gs, rng(), iterations=4000).action in (ActionType.CALL, ActionType.RAISE)
 
 
+# ---------------- realization-adjusted defense ----------------
+
+def test_defense_uses_realization_not_raw_equity():
+    # the leak: defending by RAW all-in equity flats offsuit junk and folds suited connectors,
+    # which play far better. Realization must REVERSE that ordering for the classic example.
+    from pokerbot.strategy import ranges
+    assert ranges.hand_equity("K3o") > ranges.hand_equity("76s")          # raw: junk "ahead"
+    assert ranges.realization_equity("76s") > ranges.realization_equity("K3o")  # realization fixes it
+    # suited/connected/paired hands gain; offsuit high-card junk gains ~nothing
+    assert ranges.realization_equity("76s") - ranges.hand_equity("76s") > 0.04
+    assert abs(ranges.realization_equity("K3o") - ranges.hand_equity("K3o")) < 1e-9
+
+
+def test_suited_connector_defends_where_offsuit_junk_folds():
+    # at a price that sits between 76s's raw equity (0.45) and its realization (0.52), the suited
+    # connector must DEFEND a HU open while comparable offsuit junk (J8o, raw 0.52) does not gain
+    sc = preflop_state(2, hero_seat=1, hero_cards="7h6h", button=0, raises=[(0, "3.0")])
+    assert decide(sc, rng()).action in (ActionType.CALL, ActionType.RAISE)
+
+
+# ---------------- pure-air bluffs never balloon to a stack-off ----------------
+
+def test_pure_air_bluff_never_rounds_up_to_all_in():
+    from pokerbot.strategy.postflop import _commit
+    # allin = 50; a bluff sized to 35 (70% of stack) sits above the 0.66 round-up trigger.
+    gs = postflop_state(2, hero_seat=0, hero_cards="7c2d", board="AsKhQd",
+                        to_call="0", pot="40", hero_stack="50")
+    air_target = D("35")
+    # pure air (allow_jam False) must STAY at the sized bet — never jam the whole stack as a stone bluff
+    assert _commit(gs, air_target, 0.30, value=False, allow_jam=False) == D("35")
+    # a semi-bluff (a draw, allow_jam True) may round up to all-in for max fold equity + outs
+    assert _commit(gs, air_target, 0.30, value=False, allow_jam=True) == D("50")
+
+
 # ---------------- primary villain attribution ----------------
 
 def test_villain_read_never_guesses_multiway_with_unreadable_bets():
