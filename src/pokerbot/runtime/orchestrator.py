@@ -1,4 +1,4 @@
-"""LiveBot — the live play loop: wait for hero's turn, scrape, decide (with reads), and (if
+"""LiveBot, the live play loop: wait for hero's turn, scrape, decide (with reads), and (if
 execute mode + consent) act, all under the SessionGuard. Defaults to observe (no clicking).
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ def profile_for(store, name: str, hu: bool):
 
 def reads_for(store, gs):
     """seat_id -> the right PlayerStats for every live opponent (aliased + table-size bucketed).
-    The ONE way reads are looked up — observe.py and the live bot must never drift apart."""
+    The ONE way reads are looked up, observe.py and the live bot must never drift apart."""
     if store is None:
         return None
     hu = len(gs.dealt_seats) == 2          # heads-up table -> use HU-only reads (looser baselines)
@@ -69,7 +69,7 @@ class LiveBot:
                                          #   routed as a 3-bet pot (keyed by hole cards = self-resets)
 
     def request_rebuy(self) -> None:
-        """Called from another thread (the UI) — confirms a second buy-in; the bot thread
+        """Called from another thread (the UI), confirms a second buy-in; the bot thread
         re-anchors the bankroll on its next table check and resumes acting."""
         self._rebuy_requested = True
 
@@ -141,7 +141,7 @@ class LiveBot:
 
     def _action_budget(self) -> float:
         """Max seconds we may think this turn: the live action timer minus a safety margin, or the
-        configured cap when the timer can't be read — so the bot is never auto-folded."""
+        configured cap when the timer can't be read, so the bot is never auto-folded."""
         try:
             left = self.scraper.read_seconds_left()
         except Exception:  # noqa: BLE001
@@ -166,9 +166,9 @@ class LiveBot:
                 except Exception:  # noqa: BLE001
                     left = None
                 if left is None:
-                    check_timer = False                 # unreadable on this table — stop polling it
+                    check_timer = False                 # unreadable on this table, stop polling it
                 elif left <= _ACTION_SAFETY:
-                    return                               # clock almost out — act NOW
+                    return                               # clock almost out, act NOW
             time.sleep(min(0.3, remaining))
 
     # --- helpers ---
@@ -185,7 +185,7 @@ class LiveBot:
         return infer_preflop_raise(gs, cfg.big_blind, my_raises=my_raises)
 
     def _iterations(self, gs) -> int:
-        """More Monte-Carlo rollouts when the pot is big — lower variance exactly where a
+        """More Monte-Carlo rollouts when the pot is big, lower variance exactly where a
         close call/fold is worth real money. Small pots stay snappy."""
         cfg = self.config
         bb = float(cfg.big_blind) if cfg.big_blind else 1.0

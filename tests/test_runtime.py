@@ -185,7 +185,7 @@ def test_latch_rearms_on_new_street_when_first_to_act():
 
 
 def test_hand_counted_even_when_first_decision_faces_a_raise():
-    # the under-count: hero's FIRST preflop decision faces a raise (to_call > bb) — the old
+    # the under-count: hero's FIRST preflop decision faces a raise (to_call > bb), the old
     # `to_call <= bb` proxy skipped these hands entirely, so max_hands/the display drifted low.
     import random
     import threading
@@ -264,7 +264,7 @@ def test_big_pots_use_more_mc_iterations():
 def test_refused_execute_re_decides_on_the_real_turn():
     # the pre-action fix refuses to click when the controls aren't live. The orchestrator must
     # then re-DECIDE the same spot on the real turn (identical sig!) instead of skipping it as
-    # a duplicate — otherwise the bot freezes on its real turn and gets auto-folded.
+    # a duplicate, otherwise the bot freezes on its real turn and gets auto-folded.
     import random
     import threading
     stop = threading.Event()
@@ -395,7 +395,7 @@ def test_sustained_zero_stack_is_a_bust():
     bot = LiveBot(sc, _RecExec(True), None, _cfg("execute", True), g)
     for _ in range(3):
         bot._table_check()
-        assert bot._needs_rebuy is False               # debounced — not flagged on a brief 0
+        assert bot._needs_rebuy is False               # debounced, not flagged on a brief 0
     bot._table_check()                                 # 4th sustained 0
     assert bot._needs_rebuy is True
     bot.request_rebuy()                                # user tops up + confirms
@@ -414,7 +414,7 @@ def test_allin_zero_then_win_is_not_a_bust():
     sc.stack = D("0")
     bot._table_check(); bot._table_check()             # all-in: stack reads 0 briefly
     assert bot._needs_rebuy is False                   # not yet (debounced)
-    sc.stack = D("400")                                # won the pot — stacked the opponent
+    sc.stack = D("400")                                # won the pot, stacked the opponent
     bot._table_check()
     assert bot._needs_rebuy is False                   # decisively not busted
     assert g.net_bb > 0                                # bankroll reflects the win, not a phantom 0

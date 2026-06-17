@@ -1,4 +1,4 @@
-"""PokerNow.com DOM selectors — calibrated from a live hand via selector_probe.
+"""PokerNow.com DOM selectors, calibrated from a live hand via selector_probe.
 
 Cards are `.card-container` elements whose classes encode them: `card-<suit>` (s/h/d/c) and
 `card-s-<rank>`, with `.flipped` meaning face-up. The hero's seat carries `.you-player`
@@ -32,7 +32,7 @@ class Selectors:
                        "input[placeholder*='code' i], [class*='verif'] input, [class*='code'] input, "
                        "input[maxlength='6'], input[maxlength='1']")
     # PokerNow's seat dialog: the stack box is <input type=text placeholder="Intended Stack"
-    # inputmode=numeric> with NO class/name/id — so match it by placeholder/inputmode first.
+    # inputmode=numeric> with NO class/name/id, so match it by placeholder/inputmode first.
     buyin_input: str = ("input[placeholder*='intended' i], input[placeholder*='stack' i], "
                         "input[placeholder*='buy' i], input[inputmode='numeric'], "
                         "[class*='buyin'] input, [class*='buy-in'] input, [class*='stack'] input, "
@@ -64,6 +64,6 @@ class Selectors:
     raise_confirm: str = ("input[type='submit'].bet, input[type='submit'].action-button, "
                           ".game-decisions-ctn input[type='submit']")
 
-    # --- running log (opened via the LOG/LEDGER button) — entry selector still TBD ---
+    # --- running log (opened via the LOG/LEDGER button), entry selector still TBD ---
     show_log_button: str = ".show-log-button"
     log_entry: str = ".log-3 .message"

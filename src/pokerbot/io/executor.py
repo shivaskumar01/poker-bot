@@ -1,11 +1,11 @@
-"""Translate a Decision into PokerNow clicks — behind a hard consent gate.
+"""Translate a Decision into PokerNow clicks, behind a hard consent gate.
 
 `execute` is a no-op (returns False, never touches the page) unless mode == 'execute' AND
 players_consent is True. Buttons are located by class (`button.fold/.check/.call/.raise`).
 
 A RAISE/BET is THREE steps on PokerNow: click RAISE to open the bet panel, type the amount, then
 click the confirm button (which then reads 'RAISE TO X' / 'BET X' / 'ALL IN'). Doing only the first
-step leaves the panel open and the bot gets auto-folded — so this does all three and verifies.
+step leaves the panel open and the bot gets auto-folded, so this does all three and verifies.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .domdump import dump_dom
 from .fields import type_into
 
 _CONFIRM_RE = re.compile(r"raise to|bet to|^\s*bet\s+[\d.,]|confirm|^\s*go\s*$", re.I)
-# the bet panel's own controls — NEVER click these as a "confirm" (ALL IN would re-size the bet!)
+# the bet panel's own controls, NEVER click these as a "confirm" (ALL IN would re-size the bet!)
 _PANEL_CTRL_RE = re.compile(r"pot|all[\s-]?in|min\s*raise|^\s*back\s*$|^\s*[-+]\s*$", re.I)
 _BETLOG = Path("data/bet_log.txt")          # paper trail of decided-vs-actually-did (gitignored)
 
@@ -42,17 +42,17 @@ class Executor:
         return self.mode == "execute" and self.players_consent
 
     def _is_hero_turn(self) -> bool:
-        """The hero is the CURRENT ACTOR — and the on-screen controls are the REAL action
+        """The hero is the CURRENT ACTOR, and the on-screen controls are the REAL action
         controls, not PokerNow's PRE-ACTION toggles.
 
         `.decision-current` alone LIES for a window right after the hero acts (it lingers on the
-        hero seat until the server confirms — proven by a live DOM dump) and around a pause. In
+        hero seat until the server confirms, proven by a live DOM dump) and around a pause. In
         that window PokerNow shows amount-less RAISE/CHECK/FOLD toggles that QUEUE an action for
         the next turn; clicking the queued RAISE fires later at the REMEMBERED amount (the last
-        street's bet) — the live 'turn lead = flop lead' bug. Real-turn markers (any one):
+        street's bet), the live 'turn lead = flop lead' bug. Real-turn markers (any one):
           * the bet panel is open (it can only exist on a real turn), or
-          * an action-area button carries an AMOUNT — 'CALL 25.00' / the 'BET 2.00' min-shortcut /
-            'ACTIVATE EXTRA TIME (10S)' — pre-action toggles are always amount-less, or
+          * an action-area button carries an AMOUNT: 'CALL 25.00' / the 'BET 2.00' min-shortcut /
+            'ACTIVATE EXTRA TIME (10S)', pre-action toggles are always amount-less, or
           * the action area shows the YOUR TURN tag."""
         try:
             if self.page.query_selector(f".you-player.{self.sel.current_actor_class}") is None:
@@ -103,10 +103,10 @@ class Executor:
                 got = self._last_set if self._last_set is not None else float(decision.amount)
                 return True, f"{a.name.lower()}→{got:.2f}"
             if res == "abort":
-                # the controls weren't live (turn flipped / pre-action toggles / pause) — touch
+                # the controls weren't live (turn flipped / pre-action toggles / pause), touch
                 # NOTHING and let the orchestrator retry on the real turn. Falling back here would
                 # click a pre-action toggle and queue a stale action.
-                return False, "controls not live (turn passed / pre-action) — no click"
+                return False, "controls not live (turn passed / pre-action), no click"
             # res == "fallback": the panel was real but the amount couldn't be sized -> NEVER
             # confirm a min bet. A BET is checkable, so CHECK; a RAISE faces a bet (incl. an
             # all-in jam), so CALL. Snapshot the DOM to diagnose the disconnect.
@@ -114,9 +114,9 @@ class Executor:
                 self._fallback_dumps += 1
                 dump_dom(self.page, f"FALLBACK target={float(decision.amount):.2f} "
                                     f"box={self._amount_str()!r}")
-            self._close_panel()        # the panel hides check/call — close it or the clicks miss
+            self._close_panel()        # the panel hides check/call, close it or the clicks miss
             if not self._is_hero_turn():
-                return False, "turn passed before the fallback — no click"
+                return False, "turn passed before the fallback, no click"
             if a == ActionType.BET:
                 return self._click(self.sel.btn_check), "FALLBACK-check (couldn't size bet)"
             return self._click(self.sel.btn_call), "FALLBACK-call (couldn't size raise)"
@@ -137,12 +137,12 @@ class Executor:
     # --- raise/bet: open panel -> set amount (VERIFIED) -> confirm ----------
     def _raise_to(self, amount: Decimal) -> str:
         """Confirm ONLY a verified amount. Returns:
-          'confirmed' — the verified amount was submitted;
-          'abort'     — the controls aren't live (turn flipped / RAISE was a pre-action toggle):
-                        NOTHING may be clicked afterwards — the toggle queues an action that fires
+          'confirmed', the verified amount was submitted;
+          'abort', the controls aren't live (turn flipped / RAISE was a pre-action toggle):
+                        NOTHING may be clicked afterwards, the toggle queues an action that fires
                         NEXT turn at PokerNow's remembered amount (the 'turn lead = flop lead' bug);
-          'fallback'  — a real panel existed but no sane amount could be set (the caller takes a
-                        free check / a call) — it NEVER confirms the panel's default min bet."""
+          'fallback', a real panel existed but no sane amount could be set (the caller takes a
+                        free check / a call), it NEVER confirms the panel's default min bet."""
         for _ in range(3):
             if not self._is_hero_turn():               # the turn evaporated mid-flow (pause/flip)
                 return "abort"
@@ -164,7 +164,7 @@ class Executor:
         return "fallback"
 
     def _await_panel(self) -> None:
-        """Block until the bet panel's amount field is actually on screen — a fixed delay was
+        """Block until the bet panel's amount field is actually on screen, a fixed delay was
         sometimes too short, leaving the field unset so the default (a min bet) got confirmed."""
         try:
             self.page.wait_for_selector(self.sel.raise_amount, state="visible", timeout=1500)
@@ -188,7 +188,7 @@ class Executor:
 
     def _preset_near(self, target: float) -> str:
         """When the exact amount won't type, fall back to the POT-relative preset CLOSEST to the
-        target (¼/½/¾/pot/all-in) — and only if it's within ~20% of target. Tries each, reads the
+        target (¼/½/¾/pot/all-in), and only if it's within ~20% of target. Tries each, reads the
         amount it produces, then re-selects the closest. Never a wildly-off size; never a min bet."""
         produced = {}
         for label, rx in self._PRESETS:
@@ -241,7 +241,7 @@ class Executor:
     def _click_confirm(self) -> bool:
         if self._click(self.sel.raise_confirm):        # <input type=submit value="Raise/Bet">
             return True
-        try:    # the REAL confirm is an <input type=submit>, never a <button> — find it directly
+        try:    # the REAL confirm is an <input type=submit>, never a <button>, find it directly
             for el in (self.page.query_selector_all("input[type='submit']") or []):
                 if el.is_visible():
                     el.click(timeout=2000)
@@ -289,12 +289,12 @@ class Executor:
 
     def _set_amount(self, amount: Decimal) -> bool:
         """Set the bet amount and VERIFY the box reads it. Returns True ONLY if a sane amount is
-        confirmed (an exact set, or a clean preset in the ballpark) — so the caller will never
+        confirmed (an exact set, or a clean preset in the ballpark), so the caller will never
         confirm the panel's default min bet."""
         target = float(amount)
         cents = str(int((amount * 100).to_integral_value()))   # 100.00 -> '10000' (cents keypad)
         dec = f"{amount:.2f}"                                   # '100.00' (decimal form)
-        # Slider FIRST — proven reliable on this table (sets the exact value for clean step amounts,
+        # Slider FIRST, proven reliable on this table (sets the exact value for clean step amounts,
         # which the bot's BB-rounded sizes are). Text/native are fallbacks; they're tried WITHOUT
         # clearing the field first (clearing left it empty -> no bet).
         strategies = (
@@ -352,7 +352,7 @@ class Executor:
         v = self._amount_value()
         if v is None:
             return False
-        # accept the slider's nearest-step value (a chip or two off — the table's own granularity)
+        # accept the slider's nearest-step value (a chip or two off, the table's own granularity)
         # but reject a wrong amount. The absolute allowance SHRINKS for small targets: a flat 2.0
         # would accept the panel's 1.00 min default when the target is a 2.00 bet (a silent min-bet).
         tol = max(0.04 * target, min(2.0, 0.25 * target))

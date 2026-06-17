@@ -54,7 +54,7 @@ def main() -> None:
     db_dir = os.path.join(os.path.dirname(__file__), "..", "data")
     os.makedirs(db_dir, exist_ok=True)
     store = StatsStore(os.path.join(db_dir, "opponents.sqlite"))
-    store.clear()                         # full rebuild — drop stale/renamed rows first
+    store.clear()                         # full rebuild, drop stale/renamed rows first
     for ps in stats.values():
         store.save(ps)
     store.close()

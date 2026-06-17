@@ -9,7 +9,7 @@ table:
   url: ""                  # full PokerNow table URL
 
 stakes:
-  small_blind: "0.50"      # fallback only — blinds are auto-detected from the live table
+  small_blind: "0.50"      # fallback only, blinds are auto-detected from the live table
   big_blind: "1.00"
   ante: "0"
   buy_in: "0"              # the bot's buy-in (for the re-buy prompt + display); 0 = ask in the UI
@@ -27,7 +27,7 @@ engine:
 timing:                    # server-courtesy / realistic pacing for a DISCLOSED bot (not stealth)
   min_think_seconds: 1.5
   max_think_seconds: 6.0
-  max_action_wait_seconds: 2.5   # NEVER think longer than this — the table's clock is short, and a
+  max_action_wait_seconds: 2.5   # NEVER think longer than this, the table's clock is short, and a
                                  # think that outlasts the turn makes the bot act one street late
                                  # (or miss its turn). 2.5s still matches the group's ~1.7s tempo.
 

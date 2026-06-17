@@ -7,7 +7,7 @@ from pokerbot.strategy.decision import Decision
 
 
 class _Loc:
-    """Stands in for page.locator(sel).first — clicks resolve to a button name or 'miss'."""
+    """Stands in for page.locator(sel).first, clicks resolve to a button name or 'miss'."""
 
     def __init__(self, sel, page):
         self._sel, self._page = sel, page
@@ -27,7 +27,7 @@ class _Loc:
 
 
 class _Marker:
-    """An action-area button carrying an AMOUNT (e.g. 'CALL 2.00') — the real-turn marker."""
+    """An action-area button carrying an AMOUNT (e.g. 'CALL 2.00'), the real-turn marker."""
 
     def __init__(self, text="CALL 2.00"):
         self._t = text
@@ -70,7 +70,7 @@ def _ex(page):
 def test_check_clicks_check_only():
     page = _Page(has_check=True, has_call=True)
     assert _ex(page).execute(Decision(ActionType.CHECK, D("0"), "give up and check")) is True
-    assert page.clicked == ["check"]                  # checked — never touched the 'BET min' button
+    assert page.clicked == ["check"]                  # checked, never touched the 'BET min' button
 
 
 def test_check_never_min_bets_when_check_click_fails():
@@ -270,7 +270,7 @@ def test_raise_calls_rather_than_min_raising_when_amount_cannot_be_set():
 
 
 def test_small_target_never_accepts_the_min_default():
-    # tolerance bug: target 2.00 with the panel's 1.00 min default must NOT verify — the old flat
+    # tolerance bug: target 2.00 with the panel's 1.00 min default must NOT verify, the old flat
     # ±2.0 allowance accepted it, silently confirming a min bet as "2.00".
     page = _BetPage(settable=False, presets=False, pot=4.0, minbet=1.0)
     assert _ex(page).execute(Decision(ActionType.BET, D("2.00"), "small value bet")) is True
@@ -291,7 +291,7 @@ def test_confirm_fallback_never_clicks_the_all_in_preset():
 
 def test_preset_reselect_is_verified_never_a_jam():
     # re-select bug: probing the presets ends on ALL IN; if re-selecting the closest one doesn't
-    # stick, the box still holds the jam — the old code confirmed it (accidental all-in).
+    # stick, the box still holds the jam, the old code confirmed it (accidental all-in).
     page = _BetPage(settable=False, presets=True, pot=200.0, reselect_breaks=True)
     assert _ex(page).execute(Decision(ActionType.BET, D("100.00"), "half pot")) is True
     assert page.confirmed is None        # never confirmed the stuck ALL-IN amount
@@ -326,7 +326,7 @@ def test_pre_action_lookalikes_are_never_clicked():
 
 def test_raise_click_without_a_panel_is_unqueued_and_aborted():
     # the RAISE control turned out to be a pre-action toggle (no panel appeared): the executor
-    # must click it AGAIN to un-queue the stale raise, then walk away — never fall back to
+    # must click it AGAIN to un-queue the stale raise, then walk away, never fall back to
     # check/call (those would queue more pre-actions).
     page = _BetPage(panel_never_opens=True, pot=200.0)
     assert _ex(page).execute(Decision(ActionType.BET, D("60.00"), "turn lead")) is False
@@ -337,7 +337,7 @@ def test_raise_click_without_a_panel_is_unqueued_and_aborted():
 
 def test_fallback_closes_the_panel_before_checking():
     # panel bug: with the panel open, check/call are HIDDEN (this fake now enforces it, like the
-    # real table) — the couldn't-size fallback must close the panel via BACK or its click misses.
+    # real table), the couldn't-size fallback must close the panel via BACK or its click misses.
     page = _BetPage(settable=False, presets=False, pot=200.0)
     assert _ex(page).execute(Decision(ActionType.BET, D("150.00"), "value bet")) is True
     assert page.panel_open is False      # BACK was clicked

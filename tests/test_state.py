@@ -64,7 +64,7 @@ def test_folded_seat_keeps_position_but_not_live():
     )
     gs2 = replace(gs, seats=seats)
     assert gs2.num_live_opponents == 4                  # one fewer live opponent
-    assert set(gs2.positions) == {0, 1, 2, 3, 4, 5}     # position fixed at deal — seat 4 still MP
+    assert set(gs2.positions) == {0, 1, 2, 3, 4, 5}     # position fixed at deal, seat 4 still MP
     assert gs2.positions[4] == "MP"
 
 

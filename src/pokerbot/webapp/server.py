@@ -93,7 +93,7 @@ class BotController:
         self._set(status="stopping…")
 
     def request_rebuy(self) -> bool:
-        """UI confirmed a second buy-in — tell the bot thread to re-anchor + resume."""
+        """UI confirmed a second buy-in, tell the bot thread to re-anchor + resume."""
         if self.bot is not None:
             self.bot.request_rebuy()
             return True
@@ -108,7 +108,7 @@ class BotController:
             self.state["session"] = {"hands": d["hands"], "net_bb": d["net_bb"]}
             self.state["warning"] = d.get("warning")
             if d["needs_rebuy"]:
-                self.state["status"] = "bot busted — confirm a re-buy to keep playing"
+                self.state["status"] = "bot busted, confirm a re-buy to keep playing"
 
     def _on_decision(self, gs, d, reads, think=None) -> None:
         villain = primary_villain_read(gs, reads)
@@ -150,10 +150,10 @@ class BotController:
                                 log=lambda m: self._set(status=m),
                                 should_stop=lambda: bool(self.stop_event and self.stop_event.is_set()))
                 ok = seater.take_seat()
-                self._set(status="seated — watching for your turn" if ok else
-                          "couldn't auto-seat — sit manually. " + (seater.last_diag or ""))
+                self._set(status="seated, watching for your turn" if ok else
+                          "couldn't auto-seat, sit manually. " + (seater.last_diag or ""))
             else:
-                self._set(status="browser open — sit at the table; the bot acts on your turn "
+                self._set(status="browser open, sit at the table; the bot acts on your turn "
                                  "(tip: set your name + buy-in to auto-seat next time)")
             db = os.path.join(ROOT, cfg.db_path)
             store = StatsStore(db) if os.path.exists(db) else None
@@ -234,7 +234,7 @@ def create_app():
     @app.post("/api/analyze")
     def analyze():
         if ctrl.running():
-            # the bot thread holds its own SQLite connection — rebuilding the same DB from this
+            # the bot thread holds its own SQLite connection, rebuilding the same DB from this
             # request thread risks 'database is locked' mid-session. Re-learn between sessions.
             return jsonify({"ok": False, "error": "stop the bot before re-learning from logs"})
         files = [f for d in LEARNING_DIRS for f in glob.glob(os.path.join(d, "*.csv"))]
@@ -248,7 +248,7 @@ def create_app():
         db = os.path.join(ROOT, cfg.db_path)
         os.makedirs(os.path.dirname(db), exist_ok=True)
         store = StatsStore(db)
-        store.clear()                     # full rebuild — drop stale/renamed rows first
+        store.clear()                     # full rebuild, drop stale/renamed rows first
         for ps in stats.values():
             store.save(ps)
         store.close()

@@ -60,7 +60,7 @@ class StatsStore:
         self.conn.commit()
 
     def clear(self) -> None:
-        """Wipe all profiles — used before a full rebuild so stale/renamed rows don't linger."""
+        """Wipe all profiles, used before a full rebuild so stale/renamed rows don't linger."""
         self.conn.execute("DELETE FROM player_stats")
         self.conn.commit()
 

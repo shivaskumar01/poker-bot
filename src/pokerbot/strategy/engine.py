@@ -1,7 +1,7 @@
-"""Decision engine entry point — routes by street, applies exploit reads.
+"""Decision engine entry point, routes by street, applies exploit reads.
 
-`reads` maps a live opponent's seat id to their PlayerStats. We pick the "primary villain"
-— the player we're reacting to (the aggressor when facing a bet, else the lone opponent) —
+`reads` maps a live opponent's seat id to their PlayerStats. We pick the "primary villain",
+the player we're reacting to (the aggressor when facing a bet, else the lone opponent),
 and thread their read into the preflop/postflop logic, which shifts the baseline.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ def primary_villain_read(gs: GameState, reads):
     Attribute a read ONLY when the aggressor is unambiguous: a lone live opponent, or (multiway)
     a UNIQUE strict-max committed amount that reaches the current bet level. The live scraper
     can't read per-seat bets (multiway committed is 0/blinds-only), and `max()` over equal values
-    just picks an arbitrary seat — exploit deltas would fire against the WRONG person's profile.
+    just picks an arbitrary seat, exploit deltas would fire against the WRONG person's profile.
     No read is strictly better than a wrong read; heads-up stays exact."""
     if not reads:
         return None

@@ -151,9 +151,9 @@ def reconstruct_preflop(gs: GameState, small_blind: Decimal, big_blind: Decimal,
     """Rebuild preflop committed amounts + pot from blinds and the amount-to-call.
 
     PokerNow shows 0 in the pot display preflop (bets sit in front of players) and the live
-    scraper can't read per-seat bet chips — so without this, pot=0 and pot-odds blow up,
+    scraper can't read per-seat bet chips, so without this, pot=0 and pot-odds blow up,
     making the bot fold everything to a 3-bet. `hero_paid` is what the bot KNOWS it already
-    put in this street (its own open/3-bet, tracked by the orchestrator) — without it, facing
+    put in this street (its own open/3-bet, tracked by the orchestrator), without it, facing
     a 3-bet the hero's open was reset to a blind and the pot (so the price) read wrong.
     Heads-up-accurate; multiway approximate.
     """
@@ -189,7 +189,7 @@ def infer_preflop_raise(gs: GameState, big_blind: Decimal, my_raises: int = 0) -
 
       * my_raises=0, facing more than a limp -> ONE villain raise (an open: _vs_raise).
       * my_raises=1 and anything more to call -> hero's open + the villain's re-raise = TWO
-        raises (a 3-BET pot: _vs_3bet, 4-bet range ~2.5% not 6%) — before this, the bot
+        raises (a 3-BET pot: _vs_3bet, 4-bet range ~2.5% not 6%), before this, the bot
         treated every 3-bet of its open as a fresh open and 4-bet far too wide.
       * my_raises=2 -> THREE raises (facing a 4-bet+: premiums only).
 
@@ -218,13 +218,13 @@ class Scraper:
         self._next_body_scan = 0.0   # rate-limit read_blinds' full-page fallback (hot-loop cost)
 
     def action_buttons_present(self) -> bool:
-        """Any fold/check/call/raise control is on screen — but this ALSO matches the pre-action
+        """Any fold/check/call/raise control is on screen, but this ALSO matches the pre-action
         controls PokerNow shows during the OPPONENT's turn, so it is NOT 'is it my turn'."""
         return any(self.page.query_selector(s) for s in
                    (self.sel.btn_fold, self.sel.btn_check, self.sel.btn_call, self.sel.btn_raise))
 
     def is_hero_turn(self) -> bool:
-        """CHEAP + reliable: it's the hero's turn iff the hero's seat is the CURRENT ACTOR — the
+        """CHEAP + reliable: it's the hero's turn iff the hero's seat is the CURRENT ACTOR, the
         seat with `.decision-current`. During the opponent's turn THEIR seat carries it and the hero
         only sees pre-action ('Check/Fold ahead') controls, so this single class check (no per-loop
         button scan or inner_text read) is all that's needed and keeps the poll loop light. The bot
@@ -292,7 +292,7 @@ class Scraper:
         )
 
     def read_blinds(self):
-        """Best-effort live blinds (sb, bb) or None — checks blind-ish elements then the page."""
+        """Best-effort live blinds (sb, bb) or None, checks blind-ish elements then the page."""
         for sel in (self.sel.blinds, "[class*='blind']", "[class*='stake']", "[class*='game-name']"):
             if not sel:
                 continue
@@ -305,7 +305,7 @@ class Scraper:
                 pass
         # Full-page fallback at most every 20s: this runs on the 2s upkeep tick, and a per-tick
         # body inner_text is the exact hot-loop cost the email-gate fix removed. Blinds change
-        # rarely, so a slow fallback path is fine — a slow poll loop is not.
+        # rarely, so a slow fallback path is fine, a slow poll loop is not.
         now = time.time()
         if now < self._next_body_scan:
             return None
@@ -337,7 +337,7 @@ class Scraper:
         return None
 
     def read_hero_stack(self):
-        """Hero's current stack (Decimal) or None — used for live stop-loss + bust detection."""
+        """Hero's current stack (Decimal) or None, used for live stop-loss + bust detection."""
         for el in self.page.query_selector_all(self.sel.seat):
             classes = el.get_attribute("class") or ""
             name_el = el.query_selector(self.sel.seat_name)

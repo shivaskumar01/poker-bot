@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pokerbot"
 version = "0.1.0"
-description = "PokerNow bot for consenting home games — NLH cash, 2-10 handed, exploitative."
+description = "PokerNow bot for consenting home games, NLH cash, 2-10 handed, exploitative."
 requires-python = ">=3.11"
 dependencies = [
     "playwright>=1.40",

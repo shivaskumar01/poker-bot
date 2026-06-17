@@ -1,4 +1,4 @@
-"""READ-ONLY live observe — watch the bot read your PokerNow table and narrate decisions.
+"""READ-ONLY live observe, watch the bot read your PokerNow table and narrate decisions.
 
 It NEVER clicks. It loads the learned opponent profiles (data/opponents.sqlite) and feeds
 them to the engine, so the move it prints is the exploit-aware one. Whenever it's your turn

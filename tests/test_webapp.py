@@ -30,7 +30,7 @@ def test_config_endpoint():
 
 
 def test_analyze_is_blocked_while_the_bot_runs():
-    # the bot thread holds its own SQLite connection — a mid-session rebuild risks
+    # the bot thread holds its own SQLite connection, a mid-session rebuild risks
     # 'database is locked', so /api/analyze must refuse while running
     import threading
     app, ctrl = create_app()

@@ -1,4 +1,4 @@
-"""Action timing — how long the bot 'thinks' before it clicks, the way a human at this table does.
+"""Action timing, how long the bot 'thinks' before it clicks, the way a human at this table does.
 
 The dominant driver is POT SIZE (in big blinds): small pots are snappy (quick opens, limps,
 auto-checks), big pots get a real think. On top of that: later streets and closer/marginal spots
@@ -6,7 +6,7 @@ take a little longer, everything gets human variance, and the bot occasionally t
 big pots) or snaps (mostly in small ones). It is always clamped under `max_wait` (the table's
 action budget) so a tank can never run the clock out and auto-fold the bot.
 
-Server-courtesy / realistic pacing for a DISCLOSED bot — not stealth.
+Server-courtesy / realistic pacing for a DISCLOSED bot, not stealth.
 """
 from __future__ import annotations
 

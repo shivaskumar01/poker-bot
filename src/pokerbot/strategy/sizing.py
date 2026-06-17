@@ -1,4 +1,4 @@
-"""Bet/raise sizing — CLEAN, pot-relative amounts (the group bets in pot fractions/overbets).
+"""Bet/raise sizing, CLEAN, pot-relative amounts (the group bets in pot fractions/overbets).
 
 Postflop bets are a clean fraction/multiple of the pot rounded to the big blind (½, ¾, pot,
 1.5x, 2x...). Preflop raises are clean multiples of the blind; 3-bets are >=3x the open.
@@ -63,7 +63,7 @@ def fourbet_to(gs: GameState, *, multiple: Decimal = Decimal("2.5")) -> Decimal:
 
 # --- postflop (clean fraction/multiple of the pot, rounded to the big blind) ---
 def postflop_bet_to(gs: GameState, pot_fraction: Decimal) -> Decimal:
-    # never a min bet — floor at 2x BB so a small/under-read pot can't collapse to 1bb
+    # never a min bet, floor at 2x BB so a small/under-read pot can't collapse to 1bb
     bet = max(gs.pot * pot_fraction, Decimal("2") * gs.config.big_blind)
     return legalize_raise_to(gs, _round_amt(gs.hero.committed + bet, gs.config.big_blind))
 

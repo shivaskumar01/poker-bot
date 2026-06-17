@@ -113,7 +113,7 @@ def _threebet_mult(read, in_position: bool) -> Decimal:
 
 def _openable(cls: str) -> bool:
     """The group's opening style: pairs, ANY suited hand, broadway offsuit, and offsuit
-    connectors/one-gappers — but never random offsuit junk (95o, Q3o, J6o, A8o...)."""
+    connectors/one-gappers, but never random offsuit junk (95o, Q3o, J6o, A8o...)."""
     if is_pair(cls) or is_suited(cls):
         return True
     broadway = cls[0] in "AKQJT" and cls[1] in "AKQJT"   # both cards ten-or-higher

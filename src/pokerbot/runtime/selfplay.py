@@ -1,6 +1,6 @@
-"""Self-play harness — validate the brain on full hands and measure bb/100.
+"""Self-play harness, validate the brain on full hands and measure bb/100.
 
-Uses pokerkit as the dealer/rules engine (betting rounds, all-ins, side pots, showdown —
+Uses pokerkit as the dealer/rules engine (betting rounds, all-ins, side pots, showdown,
 all correct and tested) and plugs our `decide()` in as the agent for every seat. Each hand
 starts from equal stacks (chip-EV style) so we can run thousands of hands without bust/rebuy
 bookkeeping; the button rotates each hand for fairness. Every action is fed to the stats
@@ -55,7 +55,7 @@ def engine_agent(gs, rng, iterations):
 
 
 def station_agent(gs, rng, iterations):
-    """Calling station: never folds, never raises — calls any bet, else checks."""
+    """Calling station: never folds, never raises, calls any bet, else checks."""
     if gs.to_call > 0:
         return Decision(ActionType.CALL, gs.to_call, "station calls")
     return Decision(ActionType.CHECK, Decimal("0"), "station checks")

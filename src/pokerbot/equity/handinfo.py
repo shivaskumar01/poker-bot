@@ -44,7 +44,7 @@ def _flush_draw(hole, board) -> bool:
 
 def _straight_draw(hole, board) -> bool:
     """Open-ended straight draw only (four in a row, completable on BOTH ends) that USES a hole card
-    — a draw sitting entirely on the board isn't the hero's. Gutshots/one-enders are too weak."""
+, a draw sitting entirely on the board isn't the hero's. Gutshots/one-enders are too weak."""
     if len(board) >= 5:
         return False
     vals = {c.value for c in list(hole) + list(board)}

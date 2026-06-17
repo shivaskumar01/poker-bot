@@ -1,11 +1,11 @@
-"""Table-size-aware position model — the linchpin of dynamic adaptation.
+"""Table-size-aware position model, the linchpin of dynamic adaptation.
 
 Given the seats currently *in the hand* (in clockwise/seat order) and which seat holds the
 button, assign each a position label on the 2-to-10-handed continuum, and produce preflop /
 postflop action orders. PokerNow tables seat up to 10, so we cover N = 2..10.
 
 Convention: labels are listed clockwise starting at the button:
-    [BTN, SB, BB, UTG, ... , CO]
+    [BTN, SB, BB, UTG, ..., CO]
 In heads-up the button posts the small blind, so seat 0 is BTN (acts first preflop, last
 postflop) and seat 1 is BB.
 """

@@ -23,7 +23,7 @@ _BARE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
 
 
 def extract_code(text: str) -> str | None:
-    """Pull the 6-digit login code from an email body — prefer one labeled 'code/verification'."""
+    """Pull the 6-digit login code from an email body, prefer one labeled 'code/verification'."""
     m = _LABELED.search(text or "") or _BARE.search(text or "")
     return m.group(1) if m else None
 
@@ -90,7 +90,7 @@ class TempInbox:
 
     def poll_once(self, senders=("pokernow",), log=lambda m: None) -> str | None:
         """One inbox scan; returns the code if a matching email has arrived, else None.
-        (EmailLogin owns the polling loop — it calls this once per tick.)"""
+        (EmailLogin owns the polling loop, it calls this once per tick.)"""
         try:
             return self._scan_for_code(senders)
         except (urllib.error.URLError, OSError, ValueError, KeyError) as e:

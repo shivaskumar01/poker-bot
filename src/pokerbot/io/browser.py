@@ -1,7 +1,7 @@
 """Playwright browser session for PokerNow.
 
 Uses a *persistent* context (a real on-disk profile) so a one-time manual login sticks
-across runs — we never handle credentials. Headful by default so you can log in and watch.
+across runs, we never handle credentials. Headful by default so you can log in and watch.
 """
 from __future__ import annotations
 

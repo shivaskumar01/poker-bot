@@ -205,7 +205,7 @@ def test_pure_air_bluff_never_rounds_up_to_all_in():
     gs = postflop_state(2, hero_seat=0, hero_cards="7c2d", board="AsKhQd",
                         to_call="0", pot="40", hero_stack="50")
     air_target = D("35")
-    # pure air (allow_jam False) must STAY at the sized bet — never jam the whole stack as a stone bluff
+    # pure air (allow_jam False) must STAY at the sized bet, never jam the whole stack as a stone bluff
     assert _commit(gs, air_target, 0.30, value=False, allow_jam=False) == D("35")
     # a semi-bluff (a draw, allow_jam True) may round up to all-in for max fold equity + outs
     assert _commit(gs, air_target, 0.30, value=False, allow_jam=True) == D("50")
@@ -215,7 +215,7 @@ def test_pure_air_bluff_never_rounds_up_to_all_in():
 
 def test_villain_read_never_guesses_multiway_with_unreadable_bets():
     # live multiway postflop: per-seat bets are unreadable (committed all 0). max() over equal
-    # values picks an arbitrary seat — the read MUST be None, never the wrong person's profile.
+    # values picks an arbitrary seat, the read MUST be None, never the wrong person's profile.
     from pokerbot.opponents.stats import PlayerStats
     from pokerbot.strategy.engine import primary_villain_read
     reads = {1: PlayerStats("a", hands=100), 2: PlayerStats("b", hands=100)}
@@ -299,7 +299,7 @@ def test_raise_size_is_legal_facing_a_bet():
 
 def test_river_nuts_facing_a_bet_always_raises_never_traps():
     # river slowplay has zero deception value (no streets left): the nuts facing a river bet
-    # must raise for value EVERY time — the old 25% trap-call was a burned value-raise
+    # must raise for value EVERY time, the old 25% trap-call was a burned value-raise
     for s in range(25):
         gs = postflop_state(2, hero_seat=0, hero_cards="AhAd", board="As7c2dKh3s",
                             to_call="10", pot="30")
@@ -408,7 +408,7 @@ def test_opens_quality_hands_not_offsuit_junk():
 
 def test_overbet_jam_is_read_at_its_true_pot_fraction(monkeypatch):
     # gs.pot INCLUDES the live bet (the table's 'total'): a 60 jam into a 20 pot arrives as
-    # pot=80,to_call=60 — a TRUE 3x-pot overbet. The old math divided by gs.pot (60/80 = 0.75)
+    # pot=80,to_call=60, a TRUE 3x-pot overbet. The old math divided by gs.pot (60/80 = 0.75)
     # so overbet reads never fired. With equity pinned at 0.50: vs an aggressive (tag) jammer the
     # bet-size read makes this a call; vs a passive station the same jam is value -> fold.
     from pokerbot.opponents.stats import PlayerStats, Stat

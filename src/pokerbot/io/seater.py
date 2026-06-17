@@ -103,7 +103,7 @@ class Seater:
         return False
 
     def _set_name(self, submit: bool = False) -> None:
-        """Fill the display-name field. `submit` only for the standalone join prompt — NEVER in the
+        """Fill the display-name field. `submit` only for the standalone join prompt, NEVER in the
         buy-in dialog, where pressing Enter / clicking a button closes it before we can buy in."""
         if not self.name:
             return
@@ -159,7 +159,7 @@ class Seater:
             return True
         dump_dom(self.page, "on-open")                # initial screen (name prompt? seats?)
 
-        # phase 1 — handle the standalone join name prompt + wait for a SIT button / open seat
+        # phase 1, handle the standalone join name prompt + wait for a SIT button / open seat
         seat_deadline = time.time() + min(20.0, timeout)
         while time.time() < seat_deadline and not self.should_stop():
             self._email()
@@ -174,24 +174,24 @@ class Seater:
             self.last_diag = "no SIT button / open seat found. " + self._diag()
             return self.already_seated()
 
-        # phase 2 — take a seat, then buy in. CRITICAL: never submit the name here (closes the dialog)
+        # phase 2, take a seat, then buy in. CRITICAL: never submit the name here (closes the dialog)
         self._pause(0.6, 1.4)
         self._open_seat()                             # click a random SIT button
         self._pause(1.2, 2.0)
         dump_dom(self.page, "after-clicking-SIT")     # the real buy-in dialog
-        self._set_name(submit=False)                  # fill name if the dialog has one — do NOT submit
+        self._set_name(submit=False)                  # fill name if the dialog has one, do NOT submit
         self._fill_buyin()
         self._pause(0.4, 0.9)
         self._confirm_seat()
         self._pause(0.8, 1.4)
         dump_dom(self.page, "after-confirm")
 
-        # phase 3 — wait to be seated (the table may require host approval of the request)
+        # phase 3, wait to be seated (the table may require host approval of the request)
         end = time.time() + timeout
         while time.time() < end and not self.should_stop():
             if self.already_seated():
                 return True
-            self.log("requested the seat — waiting to be seated (approve it in PokerNow if asked)…")
+            self.log("requested the seat, waiting to be seated (approve it in PokerNow if asked)…")
             self._email()
             if self._buyin_dialog_open():             # only re-try while the dialog is actually open
                 self._fill_buyin()

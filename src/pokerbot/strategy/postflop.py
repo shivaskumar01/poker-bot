@@ -58,7 +58,7 @@ def _spr(gs: GameState) -> float:
 def _commit(gs: GameState, target: Decimal, eq: float, *, value: bool, allow_jam: bool) -> Decimal:
     """Legal target, with stack-commitment logic. `value` low-SPR hands just get it in; `allow_jam`
     (value OR a draw with equity) rounds a near-stack bet up to all-in so we don't leave an awkward
-    sliver behind. A PURE bluff (air) sets allow_jam=False — it must NEVER balloon into a full-stack
+    sliver behind. A PURE bluff (air) sets allow_jam=False, it must NEVER balloon into a full-stack
     stone-bluff just because the sized bet crept past two-thirds of the stack."""
     allin = gs.hero.committed + gs.hero.stack
     if value and eq >= COMMIT_EQ and _spr(gs) <= COMMIT_SPR:
@@ -75,7 +75,7 @@ def _size(gs: GameState, mx: Mixer, *, value: bool, read) -> Decimal:
     river = gs.street == Street.RIVER
     loose = _loose(read)
     # the group bets BIG (overbets, value-heavy), so ~2/3–3/4 pot is the baseline and small bets are
-    # rare — never a min-bet-looking 1/2 pot as the default.
+    # rare, never a min-bet-looking 1/2 pot as the default.
     if value:
         menu = [(Decimal("0.5"), 0.7), (Decimal("0.66"), 2.3), (Decimal("0.75"), 2.3), (Decimal("1.0"), 1.6)]
         if loose:
@@ -124,7 +124,7 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
     value_threshold = exploit.adj_value_threshold(min(0.85, VALUE_EQ + 0.04 * (n_opp - 1)), read)
     # a "strong" category still needs real equity to value-bet (don't bet the board straight,
     # counterfeited two pair, etc. that the calling range crushes). Multiway discipline is already
-    # handled by `eq` itself — equity vs N opponents falls as N rises, so thin top pair fails the
+    # handled by `eq` itself, equity vs N opponents falls as N rises, so thin top pair fails the
     # 0.50 floor into a crowd on its own; an explicit per-opponent floor double-penalized and cost
     # real value vs this loose-passive group (who continue with worse), so we don't add one.
     is_value = (info.strong and eq >= 0.50) or eq >= value_threshold
@@ -135,14 +135,14 @@ def decide_postflop(gs: GameState, rng: random.Random | None = None,
     if gs.to_call > 0:                                  # ---- facing a bet ----
         required = exploit.adj_call_required(gs.pot_odds, read)
         # read the bet SIZE. gs.pot INCLUDES the live bet we're facing (the table's 'total'),
-        # so the pot BEFORE the bet is pot - to_call — dividing by gs.pot would read every bet at
+        # so the pot BEFORE the bet is pot - to_call, dividing by gs.pot would read every bet at
         # ~half its true size (a 3x-pot jam looked like 3/4 pot and the overbet reads never fired).
         pot_before = float(gs.pot) - float(gs.to_call)
         bet_fraction = float(gs.to_call) / pot_before if pot_before > 0 else 2.5
         required = max(0.05, min(0.85, required + exploit.bet_size_delta(bet_fraction, read)))
         call_amt = min(gs.to_call, hero.stack)
         if raise_ok and strong_for_raise and eq >= RAISE_EQ:
-            # trap only with streets LEFT — river slowplay has zero deception value (the hand
+            # trap only with streets LEFT, river slowplay has zero deception value (the hand
             # ends), so a river flat with the nuts is just a burned value-raise
             if not river and mx.chance(0.25):           # mix a trap with the nuts-ish
                 return Decision(ActionType.CALL, call_amt, f"trap call {info.category} eq={eq:.2f}", equity=eq)

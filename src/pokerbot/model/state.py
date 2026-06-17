@@ -1,4 +1,4 @@
-"""Canonical game-state snapshot — pure data, no browser dependency.
+"""Canonical game-state snapshot, pure data, no browser dependency.
 
 The scraper builds one `GameState` per decision point; the strategy engine consumes it.
 All money is `Decimal` (never float). Derived values (positions, live opponents, pot odds)
@@ -48,7 +48,7 @@ class ActionType(Enum):
 # A seat is "in the hand" (still contesting the pot) when ACTIVE or ALL_IN.
 IN_HAND = frozenset({SeatStatus.ACTIVE, SeatStatus.ALL_IN})
 # A seat was "dealt in" (and so holds a fixed position for the hand) when not folded yet
-# AND not sitting out — i.e. it received cards. Folding does NOT change your position.
+# AND not sitting out, i.e. it received cards. Folding does NOT change your position.
 DEALT = frozenset({SeatStatus.ACTIVE, SeatStatus.ALL_IN, SeatStatus.FOLDED})
 
 
@@ -133,7 +133,7 @@ class GameState:
     # --- position / strategy context ---
     @property
     def dealt_seats(self) -> list[Seat]:
-        """Seats dealt into this hand (live or folded) — position is fixed at deal time."""
+        """Seats dealt into this hand (live or folded), position is fixed at deal time."""
         return [s for s in self.seats if s.status in DEALT]
 
     @property
@@ -163,7 +163,7 @@ class GameState:
         return float(self.to_call / denom)
 
     def effective_stack(self, opponent_id: int) -> Decimal:
-        """Smaller of hero's and the opponent's stack — the chips actually at risk."""
+        """Smaller of hero's and the opponent's stack, the chips actually at risk."""
         return min(self.hero.stack, self.seat(opponent_id).stack)
 
     @property

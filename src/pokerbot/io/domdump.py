@@ -15,7 +15,7 @@ _DEFAULT_DUMP = os.path.expanduser("~/poker-bot/data/dom_dump.txt")
 
 
 def scopes(page):
-    """The page plus every iframe — modals sometimes render in a child frame."""
+    """The page plus every iframe, modals sometimes render in a child frame."""
     try:
         frames = getattr(page, "frames", None)
         return list(frames) if frames else [page]

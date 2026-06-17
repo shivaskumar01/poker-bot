@@ -99,7 +99,7 @@ def test_code_screen_never_gets_the_email_even_if_selectors_overlap():
     inbox = _FakeInbox()
     assert _login(inbox).run(page, page.sel, sleep=lambda s: None) is True
     assert page.email == inbox.address
-    assert page.code == ["428913"]                # only the code — the email was never typed here
+    assert page.code == ["428913"]                # only the code, the email was never typed here
     assert "428913" in page.code and inbox.address not in page.code
 
 

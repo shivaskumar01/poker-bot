@@ -1,4 +1,4 @@
-"""Bot-vs-bot self-play — validate the brain on full hands and measure bb/100.
+"""Bot-vs-bot self-play, validate the brain on full hands and measure bb/100.
 
     PYTHONPATH=src ./.venv/bin/python tools/selfplay_harness.py [hands] [players] [seed]
     PYTHONPATH=src ./.venv/bin/python tools/selfplay_harness.py 2000 3 1 --vs-stations

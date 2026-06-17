@@ -1,4 +1,4 @@
-"""Accumulate PlayerStats from parsed hands — this is how the bot *learns* reads.
+"""Accumulate PlayerStats from parsed hands, this is how the bot *learns* reads.
 
 Walks each hand's action sequence and attributes HUD opportunities/made-counts: VPIP, PFR,
 3-bet & fold-to-3-bet (opener vs a re-raise), flop c-bet & fold-to-c-bet, postflop
@@ -71,7 +71,7 @@ def build_profiles(hands) -> dict[str, PlayerStats]:
 
 def accumulate(stats: dict[str, PlayerStats], hand) -> dict[str, PlayerStats]:
     # one name per pid (from the hand header + every action) so EVERY _get for a pid resolves to
-    # the same canonical key — otherwise empty-name calls would split a player into an id-keyed stub
+    # the same canonical key, otherwise empty-name calls would split a player into an id-keyed stub
     names = dict(hand.names or {})
     for a in hand.actions:
         if a.pid and a.name:

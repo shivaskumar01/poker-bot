@@ -72,7 +72,7 @@
   <b style="color:var(--red)">Bot busted.</b>
   <span>The bot lost its buy-in. Top its stack back up at the table, then confirm the re-buy to resume acting.</span>
   <span id="rebuy-amt" style="color:var(--gold)"></span>
-  <button class="btn-go" id="rebuyBtn" style="margin-left:auto">I’ve re-bought — resume</button>
+  <button class="btn-go" id="rebuyBtn" style="margin-left:auto">I’ve re-bought, resume</button>
 </div>
 
 <div class="wrap">
@@ -201,7 +201,7 @@ async function loadProfiles(){
   const p = await (await fetch('/api/profiles')).json();
   const body = $('profiles');
   body.innerHTML = p.length ? p.map(x=>`<tr><td>${x.name}</td><td>${x.hands}</td><td>${x.vpip}</td><td>${x.pfr}</td><td>${x.af}</td><td><span class="tag ${x.type}">${x.type}</span></td></tr>`).join('')
-    : '<tr><td colspan="6" style="color:var(--muted)">no profiles — click “Re-learn from logs”</td></tr>';
+    : '<tr><td colspan="6" style="color:var(--muted)">no profiles, click “Re-learn from logs”</td></tr>';
 }
 async function loadConfig(){
   try{ const c = await (await fetch('/api/config')).json();

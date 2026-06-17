@@ -55,14 +55,14 @@ def rfi_fraction(players_left: int, *, is_sb: bool, heads_up_match: bool,
 
 def iso_fraction(players_left: int, num_limpers: int, *, is_sb: bool,
                  heads_up_match: bool, blind_vs_blind: bool) -> float:
-    """Isolation-raise range over limpers — a touch tighter, value-weighted."""
+    """Isolation-raise range over limpers, a touch tighter, value-weighted."""
     base = rfi_fraction(players_left, is_sb=is_sb, heads_up_match=heads_up_match,
                         blind_vs_blind=blind_vs_blind)
     return base * 0.80
 
 
 # --- facing a single raise: the 3-bet-for-value fraction. (Flat-call defense is decided by
-# --- equity-vs-price below, NOT a fixed continue range — so raise sizing can't run us over.)
+# --- equity-vs-price below, NOT a fixed continue range, so raise sizing can't run us over.)
 def threebet_fraction(*, in_position: bool, vs_late_open: bool, is_bb: bool) -> float:
     if is_bb:
         return 0.060 if vs_late_open else 0.045
@@ -112,7 +112,7 @@ def realization_equity(cls: str) -> float:
     not raw all-in equity. Suited/connected/paired hands realize MORE than their all-in equity
     (they flop draws, sets and nutted hands and fold out cleanly when they miss); offsuit
     high-card junk realizes LESS (it makes dominated top pairs out of position). This is the same
-    playability score we rank opens by — defending by raw equity instead would flat offsuit junk
+    playability score we rank opens by, defending by raw equity instead would flat offsuit junk
     like K3o (raw 0.54) while folding 76s (raw 0.45) that plays far better. Capped at the
     threshold cap upstream, so a premium never folds."""
     return playability_score(cls)
